@@ -3,7 +3,7 @@
 set -euo pipefail
 
 usage() {
-  cat >&2 <<'EOF'
+  cat <<'EOF'
 Usage: deploy-pipeline-check.sh \
   --service <name> --env <env> --from <ts> --to <ts> \
   --org <org> --monorepo <repo> --gitops-repo <repo> \
@@ -86,8 +86,12 @@ All timestamps from every step are UTC (GitHub's API returns ISO 8601 UTC
 `Z`-suffixed timestamps; do not convert them). State that explicitly in the
 report rather than relying on the `Z` suffix alone to carry it.
 EOF
-  exit 1
 }
+
+# usage() prints to stdout and does not exit, so `--help` is a success: `script --help | less`
+# works and CI does not read it as a failure. Argument errors go through die_usage, which keeps
+# the exit 1 documented in pup-recipes.md's wrapper exit-code table.
+die_usage() { usage >&2; exit 1; }
 
 service=""; env=""; from=""; to=""; org=""
 monorepo=""; gitops_repo=""; env_branch=""; service_path=""; deploy_workflow=""
@@ -105,23 +109,24 @@ while [[ $# -gt 0 ]]; do
   case "$arg" in
     -h|--help)
       usage
+      exit 0
       ;;
     --service|--env|--from|--to|--org|--monorepo|--gitops-repo|--env-branch|--service-path|--deploy-workflow|--deploy-ref-prefix|--lookback)
       if [[ $has_eq -eq 0 ]]; then
-        [[ $# -ge 2 ]] || { echo "ERROR: $arg requires a value." >&2; usage; }
+        [[ $# -ge 2 ]] || { echo "ERROR: $arg requires a value." >&2; die_usage; }
         val=$2
         shift
       fi
-      [[ -n "$val" ]] || { echo "ERROR: $arg requires a non-empty value." >&2; usage; }
+      [[ -n "$val" ]] || { echo "ERROR: $arg requires a non-empty value." >&2; die_usage; }
       ;;
     -*)
       echo "ERROR: unknown flag '$arg'." >&2
-      usage
+      die_usage
       ;;
     *)
       echo "ERROR: unexpected positional argument '$arg'. This script takes named flags only;" >&2
       echo "the previous ten-argument positional form is no longer accepted. See --help." >&2
-      usage
+      die_usage
       ;;
   esac
 
@@ -159,7 +164,7 @@ missing=""
 
 if [[ -n "$missing" ]]; then
   echo "ERROR: missing required flag(s):$missing" >&2
-  usage
+  die_usage
 fi
 
 # --from/--to are now load-bearing arithmetic, not just two strings forwarded to one query, so a

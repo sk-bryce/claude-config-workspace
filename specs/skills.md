@@ -13,6 +13,26 @@ the generated artifact in `skills/`.
 
 ---
 
+## Shared script conventions
+
+Applies to every bundled script in every skill below, so a regeneration does not have to
+rediscover them per skill.
+
+- **`-h`/`--help` is a success, not an error.** It prints the usage block to stdout and exits 0,
+  so `script --help | less` works and a CI step does not read it as a failure. Wrong or missing
+  arguments print the same block to stderr and exit non-zero. One `usage()` holds the text and
+  does not exit; a one-line `die_usage()` wraps it for the error path, so the two paths cannot
+  drift apart.
+- **An unrecognized `--flag` is rejected by the script itself**, never passed through to the
+  underlying CLI. A flag that falls through to a positional slot surfaces as the wrapped tool's
+  error about the wrong thing, and the caller then has to work out whose message it is reading.
+- **Error exit codes are per-skill, not shared.** `triage-datadog`'s wrappers answer to the
+  exit-code contract in `references/pup-recipes.md`, where 1 means bad arguments and 2, 3 and 4
+  each carry a distinct evidence meaning; `fetch-pr` has no such contract and uses 2 for a usage
+  error. Do not unify these - the contract is load-bearing on one side and absent on the other.
+
+---
+
 ## fetch-pr
 
 - Purpose: fetch and format GitHub PR data (metadata including draft status, general and inline

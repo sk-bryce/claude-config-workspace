@@ -3,7 +3,7 @@
 set -euo pipefail
 
 usage() {
-  cat >&2 <<'EOF'
+  cat <<'EOF'
 Usage: monitor-timeline.sh <monitor_id> <from> <to> [org]
 
 Check 2: exact trigger/recovery timestamps for one alert cycle, plus a
@@ -29,11 +29,15 @@ window, i.e. legitimately quiet; 4 no events BUT the monitor did change
 state inside the window, meaning the event stream is unavailable for this
 monitor and the timeline has to be reconstructed from the metric.
 EOF
-  exit 1
 }
 
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
-[[ $# -eq 3 || $# -eq 4 ]] || usage
+# usage() prints to stdout and does not exit, so `--help` is a success: `script --help | less`
+# works and CI does not read it as a failure. Argument errors go through die_usage, which keeps
+# the exit 1 documented in pup-recipes.md's wrapper exit-code table.
+die_usage() { usage >&2; exit 1; }
+
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+[[ $# -eq 3 || $# -eq 4 ]] || die_usage
 monitor_id=$1
 from=$2
 to=$3

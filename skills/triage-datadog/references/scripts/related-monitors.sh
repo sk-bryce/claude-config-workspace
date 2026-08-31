@@ -3,7 +3,7 @@
 set -euo pipefail
 
 usage() {
-  cat >&2 <<'EOF'
+  cat <<'EOF'
 Usage: related-monitors.sh <team_tag> <window_start> [window_end]
 
 Check 10: enumerates monitors in scope, sorts them into three buckets, and
@@ -51,11 +51,15 @@ Output is a single JSON object on stdout (scope, window, monitors_in_scope,
 state_snapshot, event_cross_check), so it can be piped to jq directly.
 Progress and counts go to stderr.
 EOF
-  exit 1
 }
 
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
-[[ $# -ge 2 && $# -le 3 ]] || usage
+# usage() prints to stdout and does not exit, so `--help` is a success: `script --help | less`
+# works and CI does not read it as a failure. Argument errors go through die_usage, which keeps
+# the exit 1 documented in pup-recipes.md's wrapper exit-code table.
+die_usage() { usage >&2; exit 1; }
+
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+[[ $# -ge 2 && $# -le 3 ]] || die_usage
 team_tag=$1
 window_start=$2
 window_end=${3:-now}

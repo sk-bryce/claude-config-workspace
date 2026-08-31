@@ -3,7 +3,7 @@
 set -euo pipefail
 
 usage() {
-  cat >&2 <<'EOF'
+  cat <<'EOF'
 Usage: monitor-history-90d.sh <monitor_id> [from] [to]
 
 Check 3: pulls a monitor's alert-event history, pairs the events into
@@ -48,11 +48,15 @@ cache the raw pull keyed on <monitor_id, from, to>; a re-run with the same
 arguments reads the cache instead of re-querying. Delete the cache file (or
 point TRIAGE_CACHE_DIR elsewhere) to force a fresh pull.
 EOF
-  exit 1
 }
 
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
-[[ $# -ge 1 && $# -le 3 ]] || usage
+# usage() prints to stdout and does not exit, so `--help` is a success: `script --help | less`
+# works and CI does not read it as a failure. Argument errors go through die_usage, which keeps
+# the exit 1 documented in pup-recipes.md's wrapper exit-code table.
+die_usage() { usage >&2; exit 1; }
+
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+[[ $# -ge 1 && $# -le 3 ]] || die_usage
 monitor_id=$1
 from=${2:-90d}
 to=${3:-now}

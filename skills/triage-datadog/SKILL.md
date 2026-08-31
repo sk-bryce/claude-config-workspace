@@ -6,7 +6,7 @@ model: opus
 
 <!--
 created: 2026-08-26
-updated: 2026-08-27
+updated: 2026-08-31
 spec: specs/skills.md (triage-datadog section)
 generated-by: claude-opus-5[1m] (main agent, skill-author pass)
 model: claude-opus-5[1m]
@@ -70,7 +70,7 @@ concludes, and writes a local report. Recommending those actions is in scope; ta
 
 Pass `--read-only` on every `pup` invocation. It is a global flag that blocks create, update, and
 delete at the CLI layer, so the boundary above is enforced mechanically rather than by intention
-alone (verified against `pup` 1.6.4).
+alone (verified against `pup` 1.6.4; re-confirmed accepted on 1.16.0 on 2026-08-31).
 
 **On an auth failure, stop and ask.** A 401 means the token expired; a 403 means the account lacks
 the scope. Say which one it was and which query hit it, and ask the user how to proceed - do not run

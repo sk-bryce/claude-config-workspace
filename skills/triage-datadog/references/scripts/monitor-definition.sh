@@ -3,18 +3,22 @@
 set -euo pipefail
 
 usage() {
-  cat >&2 <<'EOF'
+  cat <<'EOF'
 Usage: monitor-definition.sh <monitor_id>
 
 Check 1: fetches a monitor's definition -- query, type, priority, notification
 targets, tags, creator, created/modified, overall_state, draft_status,
 matching_downtimes, thresholds. Bakes in --output=json --no-agent --read-only.
 EOF
-  exit 1
 }
 
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
-[[ $# -eq 1 ]] || usage
+# usage() prints to stdout and does not exit, so `--help` is a success: `script --help | less`
+# works and CI does not read it as a failure. Argument errors go through die_usage, which keeps
+# the exit 1 documented in pup-recipes.md's wrapper exit-code table.
+die_usage() { usage >&2; exit 1; }
+
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+[[ $# -eq 1 ]] || die_usage
 monitor_id=$1
 
 raw=$(pup monitors get "$monitor_id" --output=json --no-agent --read-only)

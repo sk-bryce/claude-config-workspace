@@ -4,7 +4,7 @@
 set -euo pipefail
 
 usage() {
-  cat >&2 <<'EOF'
+  cat <<'EOF'
 Usage: resource-metrics.sh <service> <resource_name> <from> <to>
 
 Checks 4-6: pulls, for one resource and one window --
@@ -37,11 +37,15 @@ monitors-list envelopes, which are verified), so this script does not guess
 one -- read the numbers from the raw output rather than trusting a filter
 that could silently return nothing on a shape mismatch.
 EOF
-  exit 1
 }
 
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
-[[ $# -eq 4 ]] || usage
+# usage() prints to stdout and does not exit, so `--help` is a success: `script --help | less`
+# works and CI does not read it as a failure. Argument errors go through die_usage, which keeps
+# the exit 1 documented in pup-recipes.md's wrapper exit-code table.
+die_usage() { usage >&2; exit 1; }
+
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+[[ $# -eq 4 ]] || die_usage
 service=$1
 resource_name=$2
 from=$3

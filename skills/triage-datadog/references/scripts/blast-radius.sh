@@ -4,7 +4,7 @@
 set -euo pipefail
 
 usage() {
-  cat >&2 <<'EOF'
+  cat <<'EOF'
 Usage: blast-radius.sh <service> <resource_name> <trigger_timestamp> <recovery_timestamp>
 
 Check 14: counts, not rates -- "how many requests were affected" is the
@@ -28,11 +28,15 @@ TRIAGE_METRIC_NAME=trace.servlet.request for Java servlet services (gotcha
 response labeled by step -- see resource-metrics.sh's usage for why this
 script does not guess a jq filter for the metrics-query response.
 EOF
-  exit 1
 }
 
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
-[[ $# -eq 4 ]] || usage
+# usage() prints to stdout and does not exit, so `--help` is a success: `script --help | less`
+# works and CI does not read it as a failure. Argument errors go through die_usage, which keeps
+# the exit 1 documented in pup-recipes.md's wrapper exit-code table.
+die_usage() { usage >&2; exit 1; }
+
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+[[ $# -eq 4 ]] || die_usage
 service=$1
 resource_name=$2
 trigger_ts=$3

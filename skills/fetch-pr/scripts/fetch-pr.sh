@@ -38,6 +38,14 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
+    -*)
+      # Without this arm an unknown flag falls through to the positional case and becomes the PR
+      # target, so gh rejects it with its own usage text and the caller has to guess whose error
+      # it is. Matched after -h|--help so that arm still wins.
+      echo "fetch-pr.sh: unknown flag '$1'" >&2
+      usage >&2
+      exit 2
+      ;;
     *)
       if [[ -n "$target" ]]; then
         echo "fetch-pr.sh: unexpected extra argument '$1'" >&2

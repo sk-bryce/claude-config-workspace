@@ -1,6 +1,6 @@
 <!--
 created: 2026-08-26
-updated: 2026-08-27
+updated: 2026-08-31
 -->
 
 # pup Recipes for Alert Triage
@@ -13,8 +13,17 @@ absent, ask the user rather than guessing. Commands marked **verified 2026-08-26
 against a live Datadog org on that date and their output shape confirmed; the rest come from prior
 triage sessions.
 
+Re-verified on 2026-08-31 against `pup` 1.16.0 and a live org: every command path and flag used
+here still exists, and the two envelopes the `jq` filters depend on are unchanged - `monitors
+list` still returns a bare array carrying `id`, `name`, `overall_state`, `overall_state_modified`
+and `tags`, and `events search` still returns `{data:[...]}`. The `+00:00` suffix on
+`overall_state_modified` in gotcha 6 is still present, so the `Z`-suffixed comparison it warns
+about would still silently match nothing. `monitor-timeline.sh`, `monitor-history-90d.sh`,
+`monitor-definition.sh` and `related-monitors.sh` were each run end to end, and exit codes 0 and 3
+were both observed doing what the table below says they do.
+
 `pup` is the Datadog API CLI. Discovering its surface has a trap: in an agent session `--help`
-auto-detects agent mode and returns a ~640 KB JSON schema, so `pup --help` alone floods the context.
+auto-detects agent mode and returns a ~700 KB JSON schema, so `pup --help` alone floods the context.
 Use `pup <command> --help --no-agent` for readable text (the top level is ~6 KB that way), or
 `pup agent schema` deliberately when the full machine-readable command tree is what you want; if you
 do take the JSON, redirect it to a file and query the file rather than piping.
@@ -57,7 +66,7 @@ series, which is a finding to read, not a code to catch.
 
 | Exit | Meaning | How to report it |
 | --- | --- | --- |
-| 0 | The query ran and returned data. | Normal finding. |
+| 0 | The query ran and returned data, or `-h`/`--help` was requested (usage on stdout, no JSON payload, so the two cannot be confused). | Normal finding. |
 | 1 | Wrong or missing arguments, or a rejected timestamp format. | Fix the invocation and re-run; this is not a finding about the service. |
 | 2 | `pup` returned a response shape the script does not recognize, a prerequisite (`python3`) is missing, or the `monitor_id` does not resolve at all. The raw output is printed. | **The check did not run.** Say so in the report - do not record it as a clean result. Re-derive the filter from the raw output per gotcha 6, or fix the ID. |
 | 3 | The query succeeded, the result set was empty, **and** the monitor's own `overall_state_modified` is outside the window - so the emptiness is consistent with a genuinely quiet monitor. | **This is a finding, not a failure**, but a soft one: confirm against the underlying metric before writing "no alerts". |
@@ -114,11 +123,11 @@ Two options exist only in the scripts, not in the raw recipes below:
   metric to query, defaulting to `trace.http.request`. Set it to `trace.servlet.request` for a Java
   servlet service (gotcha 5).
 
-Run a script's bare invocation (or `--help`, where the usage block itself explains the check and
-its gotchas) before falling back to the raw recipe below it - the raw recipe is what the script is
-built from and stays as the reference for anything the script doesn't cover (an unfiltered scope
-query, a variant of the same check, or the case where `pup`'s output shape has changed since the
-script was written and needs re-deriving by hand).
+Run a script's `--help` (the usage block itself explains the check and its gotchas; it prints to
+stdout and exits 0, so it pipes and redirects cleanly) before falling back to the raw recipe below
+it - the raw recipe is what the script is built from and stays as the reference for anything the
+script doesn't cover (an unfiltered scope query, a variant of the same check, or the case where
+`pup`'s output shape has changed since the script was written and needs re-deriving by hand).
 
 Check 8 (per-resource breakdown, grouped by whichever facet the investigation calls for) and checks
 11-13 have no wrapper: the query genuinely varies per investigation (which dependency, which log or
@@ -152,7 +161,9 @@ unprompted, and do not silently drop the check.
   `--no-agent` in a report appendix, so the user running it by hand sees the same shape.
 - **Pass `--read-only` on every call.** It is a global flag that blocks create, update, and delete
   at the CLI layer. Every recipe here is a read, so there is no case where omitting it helps, and it
-  makes an accidental write impossible rather than merely disallowed. Verified against `pup` 1.6.4.
+  makes an accidental write impossible rather than merely disallowed. Verified against `pup` 1.6.4;
+  re-confirmed accepted on 1.16.0 on 2026-08-31. It stays absent from `pup`'s own documented global
+  flag list on both builds, so check acceptance by invocation rather than by reading `--help`.
 - **`--jq '<expr>'` is a global flag** that filters output before formatting, so it replaces piping
   `pup` into `jq`. Prefer it where it fits: a pipe puts `jq`'s exit status in `$?` instead of
   `pup`'s, so a failed query reads as a successful empty result. The worked recipes below still use
@@ -280,7 +291,8 @@ is working and no cycle is half-indexed.
 
 **Pairing them is not as simple as zipping the two statuses together**, and getting it wrong
 silently produces both a wrong cycle count and a wrong investigation window. Three rules, all
-verified against live data on 2026-08-26 and all implemented in `monitor-history-90d.sh`:
+verified against live data on 2026-08-26, re-confirmed on `pup` 1.16.0 on 2026-08-31, and all
+implemented in `monitor-history-90d.sh`:
 
 - **A trigger row normally carries `duration: null`.** The cycle length lives on the **recovery**
   row, measured back from it. An implementation that looks for durations on the trigger rows finds

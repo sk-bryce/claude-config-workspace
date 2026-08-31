@@ -46,9 +46,10 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
   `triage-datadog`'s deploy-pipeline check.
 - `jq` - the formatting and filtering pipeline in every bundled script.
 - `pup` (Datadog API CLI, `datadog-labs/pup`) - `triage-datadog` only. Its recipes and wrapper
-  scripts were verified against `pup` 1.6.4, and later releases have not been re-verified: treat a
-  flag or response-shape mismatch on a newer build as a recipe to re-check rather than as a bug in
-  the skill.
+  scripts were verified against `pup` 1.6.4, then re-verified on 2026-08-31 against 1.16.0: the
+  command and flag surface offline, and the response shapes the `jq` filters parse against a live
+  org. Treat a flag or response-shape mismatch on a still newer build as a recipe to re-check
+  rather than as a bug in the skill.
 - `python3` - `triage-datadog` only, for reproducible UTC date arithmetic in `blast-radius.sh`,
   `seasonality-check.sh`, and `deploy-pipeline-check.sh`. Each checks for it and fails with a
   named error rather than silently shifting a window, since BSD and GNU `date(1)` disagree on how
@@ -71,7 +72,8 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
   cloning below. Its Verifying Commands section has a Cursor-facing twin at
   `~/workspace/.cursor/rules/verifying-commands.mdc` (outside this repo, since Cursor reads
   workspace rules from `.cursor/rules/`, not `.claude/`); keep the two in step.
-- `specs/skills.md` - per-skill intent and acceptance criteria; the source a regeneration reads.
+- `specs/skills.md` - per-skill intent and acceptance criteria, preceded by the script
+  conventions shared across skills; the source a regeneration reads.
 - `skills/` - generated skills:
   - `fetch-pr` - fetches and formats GitHub PR data (metadata including draft status, CI/check
     status, review decision, general and inline comments, optionally the diff) via the `gh` CLI,
