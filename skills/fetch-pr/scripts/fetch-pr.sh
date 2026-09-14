@@ -96,7 +96,22 @@ if $json_mode; then
   exit 0
 fi
 
-field() { echo "$view_json" | jq -r "$1"; }
+# Two jq traps this script kept hitting, fixed once here rather than per query.
+#
+# `//` substitutes only for null and false, so an empty string falls straight through it. gh
+# returns "" - not null - for a reviewDecision that was never set and for a deleted account's
+# login, both of which printed as a label with nothing after it. `blank_as` treats "" as missing.
+# The statusCheckRollup query below spells the same test out inline instead, because its fallback
+# is a chain of sibling fields rather than a literal.
+#
+# `split("\n")` on an empty string returns [], not [""], so `split("\n")[0]` on a bodyless
+# review yielded null and printed the literal text "null" - which every approval left without a
+# comment hit. `first_line` indexes that safely.
+jq_defs='def blank_as($fallback): if . == null or . == "" then $fallback else . end;
+         def first_line: (. // "") | split("\n") | (.[0] // "");'
+
+field() { echo "$view_json" | jq -r "$jq_defs $1"; }
+inline_field() { echo "$comments_json" | jq -r "$jq_defs $1"; }
 
 echo "## PR #$(field '.number'): $(field '.title')"
 echo
@@ -104,13 +119,18 @@ draft_suffix=""
 if [[ "$(field '.isDraft')" == "true" ]]; then
   draft_suffix=" (draft)"
 fi
-echo "- State: $(field '.state')$draft_suffix (author: $(field '.author.login // "unknown"'))"
+echo "- State: $(field '.state')$draft_suffix (author: $(field '.author.login | blank_as("unknown")'))"
 echo "- URL: $(field '.url')"
 echo "- Branch: $(field '.headRefName') -> $(field '.baseRefName')"
 echo "- Head SHA: $(field '.headRefOid')"
-echo "- Changes: +$(field '.additions') -$(field '.deletions') across $(field '.changedFiles') files"
+changed_files=$(field '.changedFiles')
+file_noun="files"
+if [[ "$changed_files" == "1" ]]; then
+  file_noun="file"
+fi
+echo "- Changes: +$(field '.additions') -$(field '.deletions') across $changed_files $file_noun"
 echo "- Created: $(field '.createdAt'), Updated: $(field '.updatedAt')"
-echo "- Review decision: $(field '.reviewDecision // "none"')"
+echo "- Review decision: $(field '.reviewDecision | blank_as("none")')"
 echo
 
 echo "### CI / Checks"
@@ -123,7 +143,7 @@ fi
 echo
 
 echo "### Reviews"
-reviews=$(echo "$view_json" | jq -r '.reviews // [] | .[] | "- \(.author.login // "unknown") (\(.state)): \(.body // "" | split("\n")[0])"')
+reviews=$(field '.reviews // [] | .[] | "- \(.author.login | blank_as("unknown")) (\(.state)): \(.body | first_line | blank_as("(no body)"))"')
 if [[ -z "$reviews" ]]; then
   echo "- No reviews yet."
 else
@@ -132,7 +152,7 @@ fi
 echo
 
 echo "### General Comments"
-general_comments=$(echo "$view_json" | jq -r '.comments // [] | .[] | "- \(.author.login // "unknown") (\(.createdAt)): \(.body)"')
+general_comments=$(field '.comments // [] | .[] | "- \(.author.login | blank_as("unknown")) (\(.createdAt)): \(.body | blank_as("(no body)"))"')
 if [[ -z "$general_comments" ]]; then
   echo "- No general comments."
 else
@@ -141,10 +161,10 @@ fi
 echo
 
 echo "### Inline Review Comments (by file)"
-inline_by_file=$(echo "$comments_json" | jq -r '
+inline_by_file=$(inline_field '
   group_by(.path)[] |
   "#### \(.[0].path)\n" +
-  (map("- Line \(.line // .original_line // "?") - \(.user.login // "unknown"): \(.body)") | join("\n"))
+  (map("- Line \(.line // .original_line // "?") - \(.user.login | blank_as("unknown")): \(.body | blank_as("(no body)"))") | join("\n"))
 ')
 if [[ -z "$inline_by_file" ]]; then
   echo "- No inline review comments."

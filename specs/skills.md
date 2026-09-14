@@ -92,6 +92,14 @@ per skill.
     the Markdown summary - `pr-review-md`'s posting phase compares it against the authenticated
     user to apply GitHub's own-PR rule, so it is a guarantee here rather than incidental output.
   - An empty section (no comments, no checks) is reported as empty, not treated as an error.
+  - A value gh returns as an empty string rather than null still prints its fallback, not a bare
+    label: an unset `reviewDecision` reads `none` and a deleted account's login reads `unknown`.
+    jq's `//` does not cover this - it substitutes only for null and false - so the script tests
+    for `""` explicitly.
+  - A review or comment with no body text reads `(no body)` rather than the literal `null`.
+    `split("\n")` on an empty string returns `[]`, so indexing `[0]` for a first line yields null
+    unless the index is guarded; every approval left without a comment hits this.
+  - Counts agree with their noun: one changed file reads `across 1 file`, not `across 1 files`.
   - Never posts anything back to GitHub.
   - A repo that cannot be inferred is asked about rather than guessed.
   - A non-zero exit from the script surfaces the real `gh`/`jq` error text to the user.
