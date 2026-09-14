@@ -1,6 +1,14 @@
 ---
 name: fetch-pr
-description: Fetches and formats GitHub pull request data - metadata (including the head commit SHA), CI/check status, review decision, general comments, and inline review comments grouped by file, plus the diff on request - via the gh CLI, so PR-review work gets one clean summary instead of re-deriving raw gh calls each time. Use when asked for a PR's status, its comments, or to "fetch"/"get" PR info, when a bare PR URL is pasted, or as the first step before reviewing a PR. Does not judge or score the code, does not post anything back to GitHub - it only fetches and formats.
+description: |
+  This skill should be used when the user asks for a GitHub pull request's status, comments, or
+  metadata - "what's the status of PR #123", "get me the comments on PR #123",
+  "fetch PR info for <url>" - when a bare PR URL is pasted, or as the first step before any
+  review judgment starts. Returns one formatted summary via the `gh` CLI: metadata including
+  draft status and the head commit SHA, CI/check status, review decision, general comments, and
+  inline review comments grouped by file, plus the diff on request, so PR-review work does not
+  re-derive raw `gh` calls each time. Fetch and format only - it does not judge or score the
+  code, and never posts anything back to GitHub. Scope: workspace.
 ---
 
 <!--

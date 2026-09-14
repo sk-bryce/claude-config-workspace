@@ -75,8 +75,8 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
   cloning below. Its Verifying Commands section has a Cursor-facing twin at
   `~/workspace/.cursor/rules/verifying-commands.mdc` (outside this repo, since Cursor reads
   workspace rules from `.cursor/rules/`, not `.claude/`); keep the two in step.
-- `specs/skills.md` - per-skill intent and acceptance criteria, preceded by the script
-  conventions shared across skills; the source a regeneration reads.
+- `specs/skills.md` - per-skill intent and acceptance criteria, preceded by the script and
+  frontmatter conventions shared across skills; the source a regeneration reads.
 - `skills/` - generated skills:
   - `fetch-pr` - fetches and formats GitHub PR data (metadata including draft status and the head
     commit SHA, CI/check status, review decision, general and inline comments, optionally the

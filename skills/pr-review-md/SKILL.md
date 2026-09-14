@@ -1,6 +1,16 @@
 ---
 name: pr-review-md
-description: Wraps the native `review` skill so a PR review lands as a persisted, consistently formatted Markdown report in a memory-recorded directory instead of transient chat output - findings rated Impact (Blocker/High/Medium/Low/Nit) and Confidence (High/Medium/Low), sorted highest-impact-and-confidence first, each led by a copy-paste-ready PR comment written respectfully and from curiosity, not judgment, with a Summary (including PR state: draft/open/merged/closed) and a Recommendation (Approve/Comment/Request changes) derived from a fixed rule. Wherever a PR touches documentation content - a dedicated doc file (ADR/RFC/design doc/README) or docstring/comment-block changes inside otherwise code-focused files, even in a mixed-content PR - also asks `review` to evaluate that content's substance, not just mechanical correctness. Use when a PR review request also carries a filing/logging qualifier - "review PR #123 and log/doc/file/record it", "/pr-review-md 123". Does not trigger on a bare "review PR #123" with no such qualifier - that stays with the native `review` skill. Does not perform its own code analysis (delegates to `review`). Filing the report is the whole job by default; posting inline comments and submitting an APPROVE/REQUEST_CHANGES/COMMENT review happens only in an opt-in second phase the user explicitly asks for, which confirms first and walks every finding one at a time; a standalone request to post a review that already exists as a report enters at that phase.
+description: |
+  This skill should be used when the user asks to review a GitHub PR and also file, log, doc, or
+  record the result - "review PR #123 and log it", "review this PR and file it",
+  "/pr-review-md 123" - or to post a review that already exists as a report,
+  "post the review for PR #123". Writes one Markdown report per PR into a directory recorded in
+  agent memory: findings rated Impact and Confidence, sorted, each led by a copy-paste-ready PR
+  comment, plus a Summary and a Recommendation. Code judgment is delegated to the native `review`
+  skill. Filing is the whole job by default; posting the comments and submitting an
+  APPROVE/COMMENT/REQUEST_CHANGES review is an opt-in posting phase that confirms first and walks
+  every finding. A bare "review PR #123" with no filing qualifier does not trigger this - that
+  stays with `review`. Scope: workspace.
 ---
 
 <!--

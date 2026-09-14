@@ -33,6 +33,28 @@ rediscover them per skill.
 
 ---
 
+## Shared frontmatter conventions
+
+Applies to every skill below, so a regeneration reproduces them rather than rediscovering them
+per skill.
+
+- **`description:` is a YAML `|` block scalar**, indented two spaces and wrapped to the width of
+  the surrounding prose. A plain scalar is invalid YAML the moment the text puts a space after a
+  colon - `Scope: workspace.` and `PR state: draft` both do - and two of these descriptions were
+  already unparseable under a strict loader while Claude Code's lenient parsing hid it. Never let
+  a line break fall inside a quoted trigger phrase: the newline survives into the advertised
+  phrase, so it stops matching what a user types.
+- **The description follows the four-part pattern**: open with "This skill should be used when
+  the user asks to ...", carry three to five exact trigger phrases in quotes, name the relevant
+  keywords or file types, and close with a one-line scope statement. The trigger phrases are the
+  ones in each section's "Trigger phrases" bullet - that bullet is the source, and the artifact
+  quotes from it rather than paraphrasing.
+- **Each description stays well inside the 1,536-character per-skill cap**, since all skill
+  descriptions share one pool (1% of the context window, 8,000 characters as a fallback) and a
+  description that overruns is silently truncated.
+
+---
+
 ## fetch-pr
 
 - Purpose: fetch and format GitHub PR data (metadata including draft status and the head commit

@@ -1,12 +1,23 @@
 ---
 name: triage-datadog
-description: This skill should be used when the user asks to triage, investigate, or root-cause a Datadog monitor or alert - e.g. "triage this alert <monitor URL>", "why did monitor 12345678 fire?", "root cause these two alerts", "what alerts fired for my team in the last 12 hours?", or pasting one or more Datadog monitor links. Runs a fixed evidence checklist via the `pup` Datadog CLI (monitor definition, 90-day trigger history, absolute-value sanity check, deploy and config change correlation, related-monitor correlation, upstream/downstream dependencies, logs/spans/traces) and writes one Markdown report per root cause to the directory recorded in agent memory under `triage-report-directory`, named `triage-YYYY-MM-DD-<slug>.md`. Groups related alerts into one report and unrelated ones into separate reports. Read-only - it never acknowledges, mutes, closes, or edits a monitor, files a ticket, or posts to Slack. Scope: workspace.
+description: |
+  This skill should be used when the user asks to triage, investigate, or root-cause a Datadog
+  monitor or alert - e.g. "triage this alert <monitor URL>", "why did monitor 12345678 fire?",
+  "root cause these two alerts", "what alerts fired for my team in the last 12 hours?", or
+  pasting one or more Datadog monitor links. Runs a fixed evidence checklist via the `pup`
+  Datadog CLI (monitor definition, 90-day trigger history, absolute-value sanity check, deploy
+  and config change correlation, related-monitor correlation, upstream/downstream dependencies,
+  logs/spans/traces) and writes one Markdown report per root cause to the directory recorded in
+  agent memory under `triage-report-directory`, named `triage-YYYY-MM-DD-<slug>.md`. Groups
+  related alerts into one report and unrelated ones into separate reports. Read-only - it never
+  acknowledges, mutes, resolves, schedules downtime on, edits, or deletes a monitor, files a
+  ticket, or posts to Slack. Scope: workspace.
 model: opus
 ---
 
 <!--
 created: 2026-08-26
-updated: 2026-08-31
+updated: 2026-09-14
 spec: specs/skills.md (triage-datadog section)
 generated-by: claude-opus-5[1m] (main agent, skill-author pass)
 model: claude-opus-5[1m]
