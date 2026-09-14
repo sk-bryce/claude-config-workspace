@@ -70,7 +70,7 @@ if [[ -n "$repo" ]]; then
 fi
 
 view_json=$(gh pr view "$target" ${repo_args[@]+"${repo_args[@]}"} --json \
-  number,title,state,isDraft,author,url,baseRefName,headRefName,additions,deletions,changedFiles,createdAt,updatedAt,reviewDecision,statusCheckRollup,comments,reviews)
+  number,title,state,isDraft,author,url,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,createdAt,updatedAt,reviewDecision,statusCheckRollup,comments,reviews)
 
 # The comments endpoint (inline review comments) needs owner/repo/number, which we can
 # always recover from the PR's own url field rather than requiring --repo up front.
@@ -107,6 +107,7 @@ fi
 echo "- State: $(field '.state')$draft_suffix (author: $(field '.author.login // "unknown"'))"
 echo "- URL: $(field '.url')"
 echo "- Branch: $(field '.headRefName') -> $(field '.baseRefName')"
+echo "- Head SHA: $(field '.headRefOid')"
 echo "- Changes: +$(field '.additions') -$(field '.deletions') across $(field '.changedFiles') files"
 echo "- Created: $(field '.createdAt'), Updated: $(field '.updatedAt')"
 echo "- Review decision: $(field '.reviewDecision // "none"')"

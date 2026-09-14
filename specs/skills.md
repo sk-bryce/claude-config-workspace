@@ -1,6 +1,6 @@
 ---
 created: 2026-08-05
-updated: 2026-08-31
+updated: 2026-09-14
 ---
 
 # Skill Specs
@@ -35,9 +35,10 @@ rediscover them per skill.
 
 ## fetch-pr
 
-- Purpose: fetch and format GitHub PR data (metadata including draft status, general and inline
-  review comments, CI check status, optionally the diff) via the `gh` CLI, so PR-review work gets
-  one clean structured summary instead of re-deriving raw `gh`/JSON calls each time.
+- Purpose: fetch and format GitHub PR data (metadata including draft status and the head commit
+  SHA, general and inline review comments, CI check status, optionally the diff) via the `gh` CLI,
+  so PR-review work gets one clean structured summary instead of re-deriving raw `gh`/JSON calls
+  each time.
 - Trigger phrases: "what's the status of PR #N", "get me the comments on PR #N", "fetch PR info
   for <url>", pasting a bare PR URL, or being asked to review a PR before any review judgment
   starts.
@@ -62,6 +63,12 @@ rediscover them per skill.
     file, with the diff included only when asked for.
   - Metadata includes draft status (`isDraft`); the Markdown summary's State line notes
     "(draft)" when true rather than only reporting the underlying OPEN/CLOSED/MERGED state.
+  - Metadata includes the head commit SHA (`headRefOid`), in the JSON and on its own line in the
+    Markdown summary - `pr-review-md`'s posting phase anchors inline review comments to it, and
+    fetching it here keeps that caller from making a second `gh pr view` call of its own.
+  - Metadata includes the PR author's login (`author.login`), in the JSON and on the State line of
+    the Markdown summary - `pr-review-md`'s posting phase compares it against the authenticated
+    user to apply GitHub's own-PR rule, so it is a guarantee here rather than incidental output.
   - An empty section (no comments, no checks) is reported as empty, not treated as an error.
   - Never posts anything back to GitHub.
   - A repo that cannot be inferred is asked about rather than guessed.
@@ -87,30 +94,39 @@ rediscover them per skill.
   comment written respectfully and from a perspective of curiosity rather than judgment, with a
   Summary (including PR state) and a rule-derived Recommendation. Also asks `review` to judge
   documentation substance when a PR touches docs, and to skip restating feedback already posted
-  on the PR.
+  on the PR. Filing those reports is the whole job by default; a second, opt-in phase posts the
+  findings as inline comments and submits one `APPROVE`/`COMMENT`/`REQUEST_CHANGES` review per PR,
+  but only when the user explicitly asks and only through its own confirmation, per-finding, and
+  submission-type gates.
 - Trigger phrases: a PR review request with an explicit filing/logging qualifier - "review PR #N
   and log/doc/file/record it", "/pr-review-md 123". A bare "review PR #N" with no such qualifier
   is out of scope and stays with the native `review` skill; this skill must not try to out-compete
-  `review`'s own trigger on identical generic phrasing.
+  `review`'s own trigger on identical generic phrasing. The posting phase is reached from an
+  explicit posting ask, either in the original request, in a later message, or as a standalone
+  request to post a review that already exists as a report ("post the review for PR #N") - which
+  enters at Phase 2, reading that existing report rather than reviewing the PR again.
 - Non-goals: no independent code analysis - all review judgment is delegated to the native
   `review` skill, this skill only steers its output vocabulary and persists/formats the result.
   Does not wrap `security-review` (operates on the local current branch's pending changes, not an
   arbitrary PR by number - doesn't fit this skill's PR-by-reference model) or the
-  `pr-review-toolkit` plugin. Never posts anything back to GitHub, and that prohibition is
+  `pr-review-toolkit` plugin. Phase 1 posts nothing back to GitHub, and that prohibition is
   unconditional: no `gh pr comment`, no `gh pr review`, no submitted
-  `APPROVE`/`REQUEST_CHANGES`/`COMMENT` state, whatever the computed Recommendation says and
-  however severe the findings. Where the user's own request bundles a posting ask with the review,
-  the skill stops and confirms before writing rather than carrying it out inline - the ask is
-  outside what this skill does, so it is confirmed rather than inferred.
+  `APPROVE`/`COMMENT`/`REQUEST_CHANGES` state, whatever the computed Recommendation says and
+  however severe the findings. Posting happens only in Phase 2, only on an explicit ask, and never
+  inline within Phase 1 - where the user's own request bundles a posting ask with the review, the
+  reports are still written first and Phase 2 is entered at its confirmation step, so the ask is
+  confirmed rather than inferred.
 - Model/tier: no pin - orchestration and formatting, not judgment-heavy or trivial; inherits
   whatever model the calling session is already using, same convention as `fetch-pr`.
 - Knowledge source: none beyond this spec; no external reference doc is loaded.
-- Behavior:
+- Behavior (Phase 1, review and file - always runs; steps 1-10 repeat per PR when several are
+  named):
   0. Resolve the report directory from agent memory key `pr-review-docs-location`; if absent,
      prompt the user via `AskUserQuestion` (recommending `~/workspace/workbench/prs`) before
      running `review`, and write the memory entry plus its `MEMORY.md` pointer so later sessions do
      not re-ask. Prompting before the review rather than after it matters: a completed review with
-     nowhere to file it wastes the expensive half of the run.
+     nowhere to file it wastes the expensive half of the run. A Phase 2 run entered on its own
+     resolves the directory the same way and first, having no report to read without it.
   1. Resolve the PR reference (number/URL/repo) the same way `fetch-pr` does; ask if the repo
      can't be inferred.
   2. Call `fetch-pr`'s script directly for metadata (no `--diff` - this skill doesn't analyze
@@ -118,7 +134,9 @@ rediscover them per skill.
      instead of re-deriving `gh pr view` calls, per that skill's own composition invitation. From
      the same JSON, also extract what's already been said on the PR - general comments
      (`pr.comments`), review bodies (`pr.reviews`), and inline review comments
-     (`inline_comments`) - for step 4's duplicate-avoidance instruction.
+     (`inline_comments`) - for step 4's duplicate-avoidance instruction, plus the head commit
+     SHA (`pr.headRefOid`) and the PR author's login, which Phase 2 needs to anchor its comments
+     and to tell whether the authenticated user is the author.
   3. Map to a PR state label for the Summary: `state=OPEN, isDraft=true` -> "draft";
      `state=OPEN` -> "open"; `state=MERGED` -> "merged"; `state=CLOSED` -> "closed".
   4. Invoke `Skill('review', args: "<PR reference> - rate every finding with two explicit labels,
@@ -145,7 +163,8 @@ rediscover them per skill.
      finding as a question or observation rather than a verdict - while staying direct enough that
      the actionable ask remains unambiguous.
   8. Recommendation rule: any Blocker or High finding -> Request changes; only Medium/Low/Nit
-     findings (no Blocker/High) -> Comment; no findings -> Approve. One-line rationale.
+     findings (no Blocker/High) -> Comment; no findings -> Approve. One-line rationale. Phase 2
+     reuses it as the pre-selected default for the submission type.
   9. Derive the filename: `<pr-id>` is the PR number. Short title is <=8 words, literal or
      paraphrased from the PR's actual title; if the title contains a JIRA ticket matching
      the team's JIRA project pattern (`<PREFIX>-\d+`, the prefix held in agent memory under
@@ -153,13 +172,97 @@ rediscover them per skill.
      slugified (lowercase, non-alphanumeric -> hyphens). Before writing, glob
      `<report-directory>/<pr-id>-*.md` - if a file already exists for this PR id, reuse that
      exact filename (overwrite) instead of generating a fresh filename from a new paraphrase, so
-     re-running the review on the same PR overwrites rather than duplicates.
+     re-running the review on the same PR overwrites rather than duplicates; any
+     `## Review submission` section in that file is carried forward into the rewrite rather than
+     dropped, since it records what has already been said on the PR.
   10. Ensure `<report-directory>` exists, then write the report (Summary with state,
       Recommendation with rationale, Findings sorted as above, or an explicit "No findings"
       note).
-  11. Report back the file path written and the Recommendation line, then stop. Do not follow the
-      report with a posted comment, an approval, or a requested-changes state; a later, explicit
-      request to post is a separate action the user takes after reading the report.
+  11. Once every PR in the request has a written report, and before anything is offered for
+      posting, run one editorial refinement pass per report: invoke the `review-md` skill on each
+      report path if it is available, otherwise dispatch a foreground `Agent` fork
+      (`subagent_type: "fork"`) per report to proofread and refine it in place, keeping that
+      read-through out of the calling context. The pass fixes accuracy, consistency, omissions and
+      wording and may tighten a fenced comment, but does not re-litigate findings, ratings, or the
+      Recommendation, and does not add findings.
+  12. Report back each file path written and each Recommendation line. If posting was not
+      explicitly asked for, stop there; a later, explicit request to post enters Phase 2 at P1.
+- Behavior (Phase 2, post the review - only on an explicit posting ask; P1 confirms once for the
+  whole batch and P2 through P7 repeat per PR in the order the user named them; also reachable
+  without Phase 1 by globbing `<report-directory>/<pr-id>-*.md`
+  for an existing report, since P2 fetches the metadata either way and `review` is not re-run. If
+  no report exists for that PR, say so and ask whether to review it first rather than assuming a
+  review-then-post was meant):
+  P1. Confirm before starting, via `AskUserQuestion` naming the PRs and report files: post and
+      walk the findings (recommended, since they asked) against don't post. A posting ask bundled
+      into the original request still passes through this gate.
+  P2. Gather everything the submission needs before asking about any finding, since a walk that
+      runs to the end and then fails on a missing precondition wastes every answer given: the
+      report re-read from disk (step 11 may have changed the wording and the file is the source
+      of truth); a fresh `scripts/fetch-pr.sh <target> [--repo owner/repo] --diff --json`, one
+      call covering the head SHA (`pr.headRefOid`, which may have moved since Phase 1), the
+      current state and reviews, and the diff that P4 needs in order to know which lines will
+      accept an inline comment - Phase 1 skips the diff because it does not analyze code, Phase 2
+      needs it for anchoring; and the authenticated user's login (`gh api user -q .login`) for
+      the duplicate check here and the own-PR rule at P5, along with whether that user can write
+      to the repository (`gh api repos/<owner>/<repo> -q .permissions.push`), since a read-only
+      login cannot land the submission at all. Then surface any reason not to proceed and ask
+      whether to continue: an existing
+      `## Review submission` section, an existing review by the authenticated user on this PR (a
+      second submission double-notifies the author), or a merged/closed PR, where `APPROVE` and
+      `REQUEST_CHANGES` are rejected and only `COMMENT` is usable.
+  P3. Walk the findings in report order. Immediately before each `AskUserQuestion`, print the
+      finding verbatim - number and title, Impact, Confidence, file/line, the fenced comment text
+      exactly as the report has it, and the context beneath it - so the decision is made against
+      the real text rather than a summary. Each question offers four options: Post as-is
+      (recommended), Revise the wording before posting, Defer (not this round; the finding stands
+      and stays outstanding in the report), Skip (withdrawn for this PR). One finding per call -
+      the point of the walk is approving each comment's exact text before it lands on someone
+      else's PR, which stacking four comment bodies above one call works against. A Revise answer
+      loops: rewrite from the user's wording or steer, show the revised text verbatim, re-ask the
+      same four options, and post exactly the text they last accepted.
+  P4. Assemble one review per PR from the findings marked Post: each becomes an inline comment
+      with `path`, `line`, `side` (RIGHT for an added or unchanged line, LEFT for a removed one)
+      and the comment text as `body`, with `commit_id` pinned to the P2 head SHA so anchors do
+      not drift. `line` is numbered in the file its `side` names - the head file for RIGHT, the
+      pre-image for LEFT - read off the P2 diff rather than assumed to be a head-file line, and a
+      range finding carries `start_line`/`start_side` alongside the `line`/`side` that end it. A
+      finding whose location is not in the diff, or that has no file/line at all ("there are no
+      tests for this"), cannot carry an inline comment, so it moves into the review body as a note
+      naming the file and line where it has one, and the relocation is stated to the user rather
+      than the finding being dropped. The review body is one or two sentences, factual, polite
+      and respectful, summarizing what the review covers, with no attribution of
+      any kind - no "automated", "AI-assisted", "generated by", no tool or model name, no footer
+      or badge.
+      If the walk left nothing marked Post, stop before P5 and submit nothing, saying every
+      finding was deferred or skipped - a body-only review the user did not ask for still
+      notifies the author - while still recording the dispositions per P7. The one exception is a
+      report with no findings at all, where the Recommendation was `Approve` and the user asked
+      to post it: that submits as a body-only `APPROVE`.
+  P5. Choose the submission type via `AskUserQuestion` (header "Review type":
+      `APPROVE`/`COMMENT`/`REQUEST_CHANGES`), after showing the assembled payload: the exact body
+      text, the inline comments with file/line, anything relocated into the body, and the
+      deferred/skipped counts. The option matching the report's Recommendation is marked
+      recommended. When the authenticated user is the PR author, GitHub rejects `APPROVE` and
+      `REQUEST_CHANGES` on their own PR, so only `COMMENT` is offered and the reason is stated.
+  P6. Submit in a single call to the reviews endpoint - `gh api --method POST
+      repos/<owner>/<repo>/pulls/<pr-id>/reviews --input <payload>` with the payload written to
+      the scratchpad and built by a tool that quotes for you, never by interpolating comment text
+      into a shell string. `gh pr review` is not usable here: it cannot carry inline comments.
+      Individual comments are never posted first, since that double-notifies and orphans comments
+      if the submit then fails. Judge the call by exit status and response body. On failure,
+      report the error verbatim, record the failed attempt in the report, and ask before retrying
+      rather than silently re-anchoring comments, downgrading the event, or falling back to
+      one-at-a-time comments.
+  P7. Append a dated entry under a `## Review submission` section in the report - appended, never
+      replaced, since an earlier entry records what was already said on the PR and both P2's
+      existing-submission check and step 9's carry-forward depend on it surviving. Each entry
+      holds the submitted type, the review URL from the response, the submitted body, and a
+      per-finding disposition table (Posted as-is / Posted (revised) / Deferred / Skipped). For a
+      revised finding, also record
+      the text actually posted, verbatim, beneath that finding. Then report back the review URL,
+      the number of comments posted, and which findings were deferred or skipped. A later Phase 2
+      run brings deferred findings back into the P3 walk and leaves skipped ones out unless asked.
 - Acceptance criteria:
   - Given a filing-qualified PR review request, produces one Markdown file at
     `<report-directory>/<id>-<slug>.md` with a Summary (including PR state), a
@@ -170,15 +273,51 @@ rediscover them per skill.
     as a question or observation about the code rather than a judgment of the author - no
     accusatory or dismissive phrasing - while still naming a specific, actionable ask.
   - Re-running the same request against the same PR overwrites the existing file for that PR id
-    rather than creating a second one, even if the paraphrased short title differs between runs.
+    rather than creating a second one, even if the paraphrased short title differs between runs,
+    and any existing `## Review submission` section survives the overwrite.
   - A missing `pr-review-docs-location` memory key results in a prompt to the user and a written
     memory entry, not a guessed or hardcoded path, and the prompt comes before `review` runs.
   - No findings -> the file states "No findings" and Recommendation is Approve, rather than an
     empty Findings section.
   - A bare "review PR X" with no filing qualifier does not trigger this skill.
-  - Nothing reaches GitHub on any path: not on a `Request changes` recommendation, not on a
-    Blocker finding, and not when the user's original request also asked for the review to be
-    posted - that last case stops and confirms before the report is written rather than posting.
+  - Every report is refined before any posting is offered: via `review-md` where that skill is
+    available, otherwise via a forked agent, and in either case without findings, ratings, or the
+    Recommendation changing as a result.
+  - Nothing reaches GitHub without an explicit posting ask from the user: not on a
+    `Request changes` recommendation, not on a Blocker finding, and not as a side effect of
+    already having the PR open. When the user's original request also asked for the review to be
+    posted, the reports are written and refined first and Phase 2 begins at its confirmation
+    question rather than posting inline.
+  - Given a confirmed posting run, every finding gets its own `AskUserQuestion` call - its
+    verbatim comment text shown immediately before it, with Post as-is / Revise / Defer / Skip
+    offered - and only findings marked Post reach GitHub, in the wording the user last accepted.
+  - A standalone posting request for a PR with no report in `<report-directory>` results in a
+    question about whether to review it first, not a silent Phase 1 run followed by a post.
+  - A posting run fetches the diff, head SHA, authenticated user's login and write permission,
+    and surfaces both duplicate signals - a `## Review submission` section in the report, and an
+    existing review by that login on the PR - as well as a closed/merged PR, before the
+    per-finding walk begins -
+    never discovering a blocked submission only after the user has answered every question.
+  - A posting run submits exactly one review per PR, of the type the user chose, in a single API
+    call, with inline comments anchored to the head SHA; a finding whose line is absent from the
+    diff appears in the review body with its file/line rather than being dropped or silently
+    re-anchored.
+  - When the authenticated user is the PR's own author, only `COMMENT` is offered as a submission
+    type and the reason is stated, rather than an `APPROVE`/`REQUEST_CHANGES` attempt GitHub
+    rejects.
+  - Inline comments follow the side rule - `RIGHT` with a head-file line number for an added or
+    unchanged line, `LEFT` with a pre-image line number for a removed one - and a range finding
+    carries `start_line`/`start_side` rather than collapsing onto its end line.
+  - A later posting run against the same report brings deferred findings back into the walk and
+    leaves skipped ones out unless the user asks for them.
+  - A walk that marks nothing Post submits nothing and says so, rather than landing a body-only
+    review; a no-findings report the user asked to post is the only body-only submission.
+  - The submitted review body is one or two plain, polite sentences and carries no attribution -
+    no "automated", "assisted", tool name, model name, footer, or badge anywhere in the review or
+    its comments.
+  - After a submission, the report carries a `## Review submission` section recording the date,
+    type, review URL, submitted body, and each finding's disposition, with revised comment text
+    recorded verbatim.
   - Given a PR that touches documentation content (a dedicated doc file, or
     docstring/comment-block changes inside code), the report's findings for that content also
     cover substance - reasoning soundness, whether alternatives/risks are addressed, gaps or
@@ -207,20 +346,45 @@ rediscover them per skill.
   substance overlaps an existing comment is a semantic call an LLM reviewer is suited to make -
   not a brittle text-matching heuristic here. `fetch-pr`'s `--json` call already returns general
   comments, review bodies, and inline comments in one round trip; this was previously fetched and
-  discarded during the metadata step, so passing it forward needs no second fetch. Comment tone is
-  specified here rather than left to the drafting model's default because the fenced blocks are
+  discarded during the metadata step, so passing it forward needs no second fetch. The head
+  commit SHA the posting phase anchors against was added to `fetch-pr`'s field list for the same
+  reason - one fetch that the caller reads what it needs from, rather than a second `gh pr view`
+  here for one field. Comment tone is specified here rather than left to the drafting model's
+  default because the fenced blocks are
   meant to be pasted onto a real PR verbatim: a finding that is technically correct but reads as a
   verdict on the author costs more in review friction than it saves in words, and curiosity-framed
-  phrasing also leaves room for the author to supply context the reviewer lacked. The no-posting
-  rule is additionally restated as a hard rule in the artifact itself rather than living only here,
-  because a prior run posted to a live PR without being asked, more than once. A prohibition that
+  phrasing also leaves room for the author to supply context the reviewer lacked. The rule that
+  Phase 1 posts nothing is additionally restated as a hard rule in the artifact itself rather than
+  living only here, because a prior run posted to a live PR without being asked, more than once.
+  A prohibition that
   appears only in the spec an artifact was generated from is not load-bearing at run time, and an
   unrequested comment on someone else's PR is not undone by deleting it. The artifact therefore
-  also names the two signals most likely to read as authorization - a `Request changes`
-  recommendation and the severity of a Blocker finding - as explicitly not being it, and routes the
-  one case that most resembles a licensed exception, the user asking for the review and the post in
-  a single message, through a confirmation rather than through the skill's own inference about what
-  was meant.
+  also names the signals most likely to read as authorization - a `Request changes` recommendation
+  and the severity of a Blocker finding - as explicitly not being it, and routes the one case that
+  most resembles a licensed exception, the user asking for the review and the post in a single
+  message, through a confirmation rather than through the skill's own inference about what was
+  meant. Posting lives in this skill as a gated second phase rather than in a separate skill
+  because it consumes Phase 1's own artifacts - the report file, its finding order, its wording,
+  its Recommendation, the PR metadata already resolved - and a second skill would have to
+  re-derive all of it while giving the model a second, independently triggerable way to
+  reach the GitHub write path. One phase, unreachable except through an explicit ask and its own
+  confirmation, keeps exactly one door. The refinement pass sits before that confirmation rather
+  than after the report is written, because the text the user is about to approve line by line
+  should already be the final text. `review-md` is preferred where it exists because it is the
+  repo's own proofreading pass and the reports are Markdown documents; the fork fallback is the
+  branch that also keeps a full read-through of every report out of the context that then has to
+  hold the posting walk, which `review-md` running inline does not. Per-finding `AskUserQuestion`
+  rather than a single "post all of this?" prompt reflects what the decision
+  actually is: the findings are independent, and the common real outcome is posting most of them
+  while rewording one and dropping another - an all-or-nothing prompt pushes the user toward
+  posting text they would have changed. Defer and Skip are kept distinct because they mean
+  different things to a later run: a deferred finding is still true and comes back, a skipped one
+  was decided against. The submission is one API call to the reviews endpoint because `gh pr
+  review` cannot carry inline comments at all, and because posting comments individually before
+  submitting would double-notify the author and strand orphan comments on a failed submit. The
+  review body carries no attribution because the review is submitted under the user's own account
+  and is their review: an "automated-assist" marker would be both noise and a claim about
+  authorship that the account holder did not make.
 
 ---
 

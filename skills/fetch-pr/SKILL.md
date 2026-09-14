@@ -1,11 +1,11 @@
 ---
 name: fetch-pr
-description: Fetches and formats GitHub pull request data - metadata, CI/check status, review decision, general comments, and inline review comments grouped by file, plus the diff on request - via the gh CLI, so PR-review work gets one clean summary instead of re-deriving raw gh calls each time. Use when asked for a PR's status, its comments, or to "fetch"/"get" PR info, when a bare PR URL is pasted, or as the first step before reviewing a PR. Does not judge or score the code, does not post anything back to GitHub - it only fetches and formats.
+description: Fetches and formats GitHub pull request data - metadata (including the head commit SHA), CI/check status, review decision, general comments, and inline review comments grouped by file, plus the diff on request - via the gh CLI, so PR-review work gets one clean summary instead of re-deriving raw gh calls each time. Use when asked for a PR's status, its comments, or to "fetch"/"get" PR info, when a bare PR URL is pasted, or as the first step before reviewing a PR. Does not judge or score the code, does not post anything back to GitHub - it only fetches and formats.
 ---
 
 <!--
 created: 2026-08-05
-updated: 2026-08-05
+updated: 2026-09-14
 spec: specs/skills.md (fetch-pr section)
 generated-by: claude-sonnet-5 (main agent, no skill-author pass)
 model: claude-sonnet-5
@@ -14,10 +14,11 @@ harness: Claude Code
 
 # Fetch PR
 
-Fetch GitHub PR data via `gh` and hand back one formatted summary - metadata, CI/check status,
-review decision, general comments, and inline review comments grouped by file, plus the diff
-when asked. This skill only fetches and formats; it never judges the code and never posts
-anything back to GitHub.
+Fetch GitHub PR data via `gh` and hand back one formatted summary - metadata (including draft
+status, the author login, and the head commit SHA, `headRefOid`), CI/check status, review
+decision, general comments, and inline review comments grouped by file, plus the diff when asked.
+This skill only fetches and formats; it never judges the code and never posts anything back to
+GitHub.
 
 ## Resolving the request
 

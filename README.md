@@ -1,6 +1,6 @@
 <!--
 created: 2026-07-16
-updated: 2026-08-31
+updated: 2026-09-14
 -->
 # Workspace AI agents config
 
@@ -28,9 +28,10 @@ Not all of this travels, so three tiers:
   `skills/triage-datadog/references/` read on their own as craft material - the report skeleton and
   the `pup` gotchas do not depend on whose org they were learned in.
 - **Works once configured.** `pr-review-md` needs the report-directory memory key below and the
-  native `review` skill it wraps. `triage-datadog` needs a Datadog org, authenticated `pup`, its
-  two environment memory keys, and - for the release-correlation check to mean anything - a deploy
-  pipeline that is actually GitOps-shaped.
+  native `review` skill it wraps; its opt-in posting phase additionally needs `gh` authenticated
+  with write access to the repository under review. `triage-datadog` needs a Datadog org,
+  authenticated `pup`, its two environment memory keys, and - for the release-correlation check to
+  mean anything - a deploy pipeline that is actually GitOps-shaped.
 - **Specific to this machine.** `CLAUDE.md`. Its Verifying Commands section is general advice, but
   Lint And Test Gates assumes a monorepo whose target names live in agent memory, the CLI list is
   what happens to be installed here, the Cursor twin it points at lives outside this repo, and the
@@ -43,7 +44,9 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
 `PATH`:
 
 - `gh` (GitHub CLI), authenticated - used by `fetch-pr` and `pr-review-md`, and by
-  `triage-datadog`'s deploy-pipeline check.
+  `triage-datadog`'s deploy-pipeline check. Read access covers everything except
+  `pr-review-md`'s opt-in posting phase, which submits a review and so needs write access to the
+  repository under review.
 - `jq` - the formatting and filtering pipeline in every bundled script.
 - `pup` (Datadog API CLI, `datadog-labs/pup`) - `triage-datadog` only. Its recipes and wrapper
   scripts were verified against `pup` 1.6.4, then re-verified on 2026-08-31 against 1.16.0: the
@@ -75,9 +78,10 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
 - `specs/skills.md` - per-skill intent and acceptance criteria, preceded by the script
   conventions shared across skills; the source a regeneration reads.
 - `skills/` - generated skills:
-  - `fetch-pr` - fetches and formats GitHub PR data (metadata including draft status, CI/check
-    status, review decision, general and inline comments, optionally the diff) via the `gh` CLI,
-    so PR-review work gets one clean summary instead of re-deriving raw `gh` calls each time.
+  - `fetch-pr` - fetches and formats GitHub PR data (metadata including draft status and the head
+    commit SHA, CI/check status, review decision, general and inline comments, optionally the
+    diff) via the `gh` CLI, so PR-review work gets one clean summary instead of re-deriving raw
+    `gh` calls each time.
     Fetch/format only - no review judgment, no posting back to GitHub. See `specs/skills.md`'s
     `fetch-pr` section for intent and `skills/fetch-pr/SKILL.md` for the generated artifact.
   - `pr-review-md` - wraps the native `review` skill so a PR review lands as a persisted,
@@ -89,7 +93,13 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
     `review` to judge documentation substance when a PR touches docs, and to skip
     restating feedback already posted on the PR. Fires only when a filing/logging qualifier is
     present ("review PR #N and log/doc/file it") - a bare "review PR #N" still goes to the
-    native `review` skill. Delegates all code judgment to `review`; never posts to GitHub. See
+    native `review` skill. Delegates all code judgment to `review`. Filing is the default and
+    posts nothing: each report gets an editorial refinement pass and that is where the run ends.
+    An opt-in posting phase - reached only when the user explicitly asks - confirms, walks every
+    finding (post as-is / revise / defer / skip), then posts the chosen comments and submits one
+    APPROVE/COMMENT/REQUEST_CHANGES review per PR and records the dispositions back into the
+    report. A standalone "post the review for PR #N" against a report that already exists enters
+    at that second phase instead of reviewing the PR again. See
     `specs/skills.md`'s `pr-review-md` section for intent and `skills/pr-review-md/SKILL.md` for
     the generated artifact.
   - `triage-datadog` - investigates one or more Datadog monitors to a defensible root cause via
