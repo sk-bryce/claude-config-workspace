@@ -296,7 +296,11 @@ P2. **Gather what the submission needs.** Before asking the user anything about 
     user on this PR (a second submission double-notifies the author), the PR is merged or closed
     (`APPROVE` and `REQUEST_CHANGES` are rejected on a closed PR, leaving `COMMENT` as the only
     usable event), or the login has no write access, in which case nothing can be submitted at
-    all. Say what you found and ask whether to continue.
+    all. Ask whether to continue with `AskUserQuestion`, and put what you found in the
+    `question` text itself, not in a message before the call, which the dialog can cover (see
+    P3): the PR number, repo and title, then each reason with its specifics - the date and type
+    of the earlier submission, the existing review's state and when it was left, the PR's
+    merged or closed state, or the missing write access for that login.
 
 P3. **Walk each finding.** For every finding in the report, in report order:
     - **Put everything the decision needs inside the `AskUserQuestion` call's `question` text.**
@@ -365,13 +369,16 @@ P4. **Assemble the submission.** One review per PR, carrying every finding marke
       exception is a report with no findings at all, where `Approve` was the Recommendation and
       the user asked to post it: that submits as a body-only `APPROVE` with no comments.
 
-P5. **Choose the submission type.** Show the assembled payload first - the exact body text, the
-    count of inline comments with their file/line, anything relocated into the body, and how many
-    findings were deferred or skipped. Then ask with `AskUserQuestion`, header "Review type":
-    `APPROVE`, `COMMENT`, `REQUEST_CHANGES`. Mark as recommended whichever matches the report's
-    Recommendation (Approve -> `APPROVE`, Comment -> `COMMENT`, Request changes ->
-    `REQUEST_CHANGES`). If the authenticated user is the PR author, GitHub rejects `APPROVE` and
-    `REQUEST_CHANGES` on their own PR - offer `COMMENT` alone and say why.
+P5. **Choose the submission type.** Ask with `AskUserQuestion`, header "Review type":
+    `APPROVE`, `COMMENT`, `REQUEST_CHANGES`. The assembled payload goes in the `question` text
+    itself, not in a message before the call, for the reason P3 gives: the PR number, repo and
+    title; the exact review body, verbatim; the count of inline comments with each one's
+    file/line and finding title; anything relocated into the body; how many findings were
+    deferred or skipped; and the report's Recommendation line with its rationale. Mark as
+    recommended whichever option matches that Recommendation (Approve -> `APPROVE`, Comment ->
+    `COMMENT`, Request changes -> `REQUEST_CHANGES`). If the authenticated user is the PR author,
+    GitHub rejects `APPROVE` and `REQUEST_CHANGES` on their own PR - offer `COMMENT` alone and
+    say why in the question.
 
 P6. **Submit.** Post everything in a single API call; never post the inline comments individually
     first, which double-notifies and leaves orphaned comments behind if the submit then fails.

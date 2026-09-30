@@ -237,10 +237,12 @@ per skill.
       the duplicate check here and the own-PR rule at P5, along with whether that user can write
       to the repository (`gh api repos/<owner>/<repo> -q .permissions.push`), since a read-only
       login cannot land the submission at all. Then surface any reason not to proceed and ask
-      whether to continue: an existing
-      `## Review submission` section, an existing review by the authenticated user on this PR (a
-      second submission double-notifies the author), or a merged/closed PR, where `APPROVE` and
-      `REQUEST_CHANGES` are rejected and only `COMMENT` is usable.
+      whether to continue: an existing `## Review submission` section, an existing review by the
+      authenticated user on this PR (a second submission double-notifies the author), a
+      merged/closed PR, where `APPROVE` and `REQUEST_CHANGES` are rejected and only `COMMENT` is
+      usable, or a login without write access. The reasons go in the `AskUserQuestion` call's
+      question text itself, as in P3, with the PR number, repo and title and each reason's
+      specifics - the earlier submission's date and type, the existing review's state and date.
   P3. Walk the findings in report order. Each `AskUserQuestion` call's `question` text carries
       everything the decision needs: the PR number, repo and title; the finding's number out of
       the total, and its title; Impact, Confidence, and file/line; the fenced comment text exactly
@@ -276,11 +278,13 @@ per skill.
       report with no findings at all, where the Recommendation was `Approve` and the user asked
       to post it: that submits as a body-only `APPROVE`.
   P5. Choose the submission type via `AskUserQuestion` (header "Review type":
-      `APPROVE`/`COMMENT`/`REQUEST_CHANGES`), after showing the assembled payload: the exact body
-      text, the inline comments with file/line, anything relocated into the body, and the
-      deferred/skipped counts. The option matching the report's Recommendation is marked
-      recommended. When the authenticated user is the PR author, GitHub rejects `APPROVE` and
-      `REQUEST_CHANGES` on their own PR, so only `COMMENT` is offered and the reason is stated.
+      `APPROVE`/`COMMENT`/`REQUEST_CHANGES`), with the assembled payload in the question text
+      itself, as in P3: the PR number, repo and title, the exact body text verbatim, the inline
+      comments with file/line and finding title, anything relocated into the body, the
+      deferred/skipped counts, and the report's Recommendation line with its rationale. The option
+      matching that Recommendation is marked recommended. When the authenticated user is the PR
+      author, GitHub rejects `APPROVE` and `REQUEST_CHANGES` on their own PR, so only `COMMENT` is
+      offered and the reason is stated in the question.
   P6. Submit in a single call to the reviews endpoint - `gh api --method POST
       repos/<owner>/<repo>/pulls/<pr-id>/reviews --input <payload>` with the payload written to
       the scratchpad and built by a tool that quotes for you, never by interpolating comment text
@@ -335,6 +339,10 @@ per skill.
     existing review by that login on the PR - as well as a closed/merged PR, before the
     per-finding walk begins -
     never discovering a blocked submission only after the user has answered every question.
+  - The continue question after those checks and the submission-type question each hold their
+    decision context in the question text itself - the reasons found with their specifics, and
+    the assembled payload with the verbatim review body - rather than in a message printed
+    before the call.
   - A posting run submits exactly one review per PR, of the type the user chose, in a single API
     call, with inline comments anchored to the head SHA; a finding whose line is absent from the
     diff appears in the review body with its file/line rather than being dropped or silently
@@ -417,14 +425,15 @@ per skill.
   posting text they would have changed. The finding travels inside each question's own text,
   not in a message printed before the call, because the question dialog can render over that
   message: a run did show the comment verbatim beforehand and the dialog still covered it, so
-  the user was asked to approve text they could not see. Defer and Skip are kept distinct
-  because they mean different things to a later run: a deferred finding is still true and comes
-  back, a skipped one was decided against. The submission is one API call to the reviews endpoint because `gh pr
-  review` cannot carry inline comments at all, and because posting comments individually before
-  submitting would double-notify the author and strand orphan comments on a failed submit. The
-  review body carries no attribution because the review is submitted under the user's own account
-  and is their review: an "automated-assist" marker would be both noise and a claim about
-  authorship that the account holder did not make.
+  the user was asked to approve text they could not see. P2's continue question and P5's
+  submission-type question follow the same rule for the same reason. Defer and Skip are kept
+  distinct because they mean different things to a later run: a deferred finding is still true
+  and comes back, a skipped one was decided against. The submission is one API call to the
+  reviews endpoint because `gh pr review` cannot carry inline comments at all, and because
+  posting comments individually before submitting would double-notify the author and strand
+  orphan comments on a failed submit. The review body carries no attribution because the review
+  is submitted under the user's own account and is their review: an "automated-assist" marker
+  would be both noise and a claim about authorship that the account holder did not make.
 
 ---
 
