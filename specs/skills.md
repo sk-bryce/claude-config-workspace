@@ -127,7 +127,8 @@ per skill.
   on the PR. Filing those reports is the whole job by default; a second, opt-in phase posts the
   findings as inline comments and submits one `APPROVE`/`COMMENT`/`REQUEST_CHANGES` review per PR,
   but only when the user explicitly asks and only through its own confirmation, per-finding, and
-  submission-type gates.
+  submission-type gates. On the user's own PR, that phase offers to fix the findings in the code
+  instead of reviewing, committing and pushing only with the user's approval.
 - Trigger phrases: a PR review request with an explicit filing/logging qualifier - "review PR #N
   and log/doc/file/record it", "/pr-review-md 123". A bare "review PR #N" with no such qualifier
   is out of scope and stays with the native `review` skill; this skill must not try to out-compete
@@ -137,15 +138,17 @@ per skill.
   enters at Phase 2, reading that existing report rather than reviewing the PR again.
 - Non-goals: no independent code analysis - all review judgment is delegated to the native
   `review` skill, this skill only steers its output vocabulary and persists/formats the result.
-  Does not wrap `security-review` (operates on the local current branch's pending changes, not an
-  arbitrary PR by number - doesn't fit this skill's PR-by-reference model) or the
-  `pr-review-toolkit` plugin. Phase 1 posts nothing back to GitHub, and that prohibition is
-  unconditional: no `gh pr comment`, no `gh pr review`, no submitted
-  `APPROVE`/`COMMENT`/`REQUEST_CHANGES` state, whatever the computed Recommendation says and
-  however severe the findings. Posting happens only in Phase 2, only on an explicit ask, and never
-  inline within Phase 1 - where the user's own request bundles a posting ask with the review, the
-  reports are still written first and Phase 2 is entered at its confirmation step, so the ask is
-  confirmed rather than inferred.
+  The own-PR path changes code, but only to do what a finding the user chose already asks; it
+  does not look for new problems. Does not wrap `security-review` (operates on the local current
+  branch's pending changes, not an arbitrary PR by number - doesn't fit this skill's
+  PR-by-reference model) or the `pr-review-toolkit` plugin. Phase 1 posts nothing back to
+  GitHub, and that prohibition is unconditional: no `gh pr comment`, no `gh pr review`, no
+  submitted `APPROVE`/`COMMENT`/`REQUEST_CHANGES` state, whatever the computed Recommendation
+  says and however severe the findings. Posting happens only in Phase 2, only on an explicit ask,
+  and never inline within Phase 1 - where the user's own request bundles a posting ask with the
+  review, the reports are still written first and Phase 2 is entered at its confirmation step,
+  so the ask is confirmed rather than inferred. The own-PR path's push is Phase 2's only other
+  write to GitHub, and happens only after the user answered yes to pushing.
 - Model/tier: no pin - orchestration and formatting, not judgment-heavy or trivial; inherits
   whatever model the calling session is already using, same convention as `fetch-pr`.
 - Knowledge source: none beyond this spec; no external reference doc is loaded.
@@ -203,8 +206,9 @@ per skill.
      `<report-directory>/<pr-id>-*.md` - if a file already exists for this PR id, reuse that
      exact filename (overwrite) instead of generating a fresh filename from a new paraphrase, so
      re-running the review on the same PR overwrites rather than duplicates; any
-     `## Review submission` section in that file is carried forward into the rewrite rather than
-     dropped, since it records what has already been said on the PR.
+     `## Review submission` or `## Own-PR fixes` section in that file is carried forward into the
+     rewrite rather than dropped, since it records what has already been said on, or changed in,
+     the PR.
   10. Ensure `<report-directory>` exists, then write the report (Summary with state,
       Recommendation with rationale, Findings sorted as above, or an explicit "No findings"
       note).
@@ -218,7 +222,8 @@ per skill.
   12. Report back each file path written and each Recommendation line. If posting was not
       explicitly asked for, stop there; a later, explicit request to post enters Phase 2 at P1.
 - Behavior (Phase 2, post the review - only on an explicit posting ask; P1 confirms once for the
-  whole batch and P2 through P7 repeat per PR in the order the user named them; also reachable
+  whole batch and P2 through P7 repeat per PR in the order the user named them, except that P2
+  routes a PR the user authored to the own-PR path, F1 through F5, instead; also reachable
   without Phase 1 by globbing `<report-directory>/<pr-id>-*.md`
   for an existing report, since P2 fetches the metadata either way and `review` is not re-run. If
   no report exists for that PR, say so and ask whether to review it first rather than assuming a
@@ -234,9 +239,15 @@ per skill.
       current state and reviews, and the diff that P4 needs in order to know which lines will
       accept an inline comment - Phase 1 skips the diff because it does not analyze code, Phase 2
       needs it for anchoring; and the authenticated user's login (`gh api user -q .login`) for
-      the duplicate check here and the own-PR rule at P5, along with whether that user can write
-      to the repository (`gh api repos/<owner>/<repo> -q .permissions.push`), since a read-only
-      login cannot land the submission at all. Then surface any reason not to proceed and ask
+      the duplicate check and own-PR check here, along with whether that user can write to the
+      repository (`gh api repos/<owner>/<repo> -q .permissions.push`), since a read-only login
+      cannot land the submission at all. If that login is the PR author, ask "Fix findings"
+      (recommended) or "Do nothing" instead of the continue question below, since GitHub rejects
+      `APPROVE` and `REQUEST_CHANGES` on one's own PR and fixing the code is the useful outcome;
+      the question text holds the PR number, repo and title, that no review will be submitted,
+      the finding count, and any P2 fact that bears on fixing - a merged/closed PR, no write
+      access, an earlier `## Own-PR fixes` entry. Do nothing stops with nothing changed; Fix
+      findings continues at F1. For anyone else's PR, surface any reason not to proceed and ask
       whether to continue: an existing `## Review submission` section, an existing review by the
       authenticated user on this PR (a second submission double-notifies the author), a
       merged/closed PR, where `APPROVE` and `REQUEST_CHANGES` are rejected and only `COMMENT` is
@@ -282,9 +293,8 @@ per skill.
       itself, as in P3: the PR number, repo and title, the exact body text verbatim, the inline
       comments with file/line and finding title, anything relocated into the body, the
       deferred/skipped counts, and the report's Recommendation line with its rationale. The option
-      matching that Recommendation is marked recommended. When the authenticated user is the PR
-      author, GitHub rejects `APPROVE` and `REQUEST_CHANGES` on their own PR, so only `COMMENT` is
-      offered and the reason is stated in the question.
+      matching that Recommendation is marked recommended. The user's own PR never reaches P5,
+      having been routed to the own-PR path at P2.
   P6. Submit in a single call to the reviews endpoint - `gh api --method POST
       repos/<owner>/<repo>/pulls/<pr-id>/reviews --input <payload>` with the payload written to
       the scratchpad and built by a tool that quotes for you, never by interpolating comment text
@@ -303,6 +313,36 @@ per skill.
       the text actually posted, verbatim, beneath that finding. Then report back the review URL,
       the number of comments posted, and which findings were deferred or skipped. A later Phase 2
       run brings deferred findings back into the P3 walk and leaves skipped ones out unless asked.
+- Behavior (own-PR path - reached only from P2, when the authenticated user authored the PR and
+  chose Fix findings; nothing is submitted as a review):
+  F1. Walk the findings as in P3 - one per `AskUserQuestion` call, the decision's context in the
+      question text, the report's fenced text shown verbatim as the statement of what to change -
+      offering Fix (recommended), Defer, or Skip. Deferred findings from an earlier run come
+      back; skipped ones stay out unless asked. A walk with nothing marked Fix changes nothing
+      and records the dispositions per F5.
+  F2. Before any edit, ask in one `AskUserQuestion` call whether to commit the fixes (default
+      Yes) and whether to push them to the PR's head branch (default Yes), naming the PR, the
+      branch, and the findings marked Fix. Push applies only to committed fixes: a Yes to push
+      with a No to commit pushes nothing, and the skill says so rather than committing anyway.
+  F3. Fix in a detached worktree of the PR's head branch - `git fetch <remote> <headRefName>`,
+      then `git worktree add --detach .worktrees/pr-<pr-id> <remote>/<headRefName>` - in a local
+      clone whose remote points at the PR's repo, asking where the checkout is rather than
+      cloning when the working directory is not one, and never assuming the remote is `origin`.
+      A `HEAD` that differs from P2's head SHA, or a head branch that lives on a fork, is raised
+      and asked about rather than worked around.
+  F4. Fix each chosen finding in report order with the smallest change that does what it asks,
+      stopping to ask when a fix needs a decision the finding does not settle or the code shows
+      the finding is wrong. Verify each change with the repo's own test and lint targets, judged
+      by exit status and output body; a failing fix is not committed, and the failure is reported
+      verbatim. With commit approved, one commit per fix, with no attribution trailer. With push
+      approved, one `git push <remote> HEAD:<headRefName>` after the last commit - never a force
+      push, and a rejected push is reported and asked about rather than rebased or forced. The
+      worktree is removed after a successful push and otherwise kept, with its path given.
+  F5. Append a dated entry under a `## Own-PR fixes` section in the report - appended, never
+      replaced - recording whether the fixes were committed and pushed, where the worktree is,
+      and a per-finding disposition table (Fixed with its short SHA / Fixed, uncommitted /
+      Deferred / Skipped). Then report back the fixed findings, commit SHAs, push status,
+      worktree path if kept, and the deferred and skipped findings.
 - Acceptance criteria:
   - Given a filing-qualified PR review request, produces one Markdown file at
     `<report-directory>/<id>-<slug>.md` with a Summary (including PR state), a
@@ -347,9 +387,15 @@ per skill.
     call, with inline comments anchored to the head SHA; a finding whose line is absent from the
     diff appears in the review body with its file/line rather than being dropped or silently
     re-anchored.
-  - When the authenticated user is the PR's own author, only `COMMENT` is offered as a submission
-    type and the reason is stated, rather than an `APPROVE`/`REQUEST_CHANGES` attempt GitHub
-    rejects.
+  - When the authenticated user is the PR's own author, the posting run submits no review: it
+    asks Fix findings or Do nothing right after its P2 checks, and Do nothing ends the run with
+    nothing changed or posted.
+  - An own-PR fix run asks about each finding (Fix / Defer / Skip) and asks whether to commit and
+    whether to push before editing anything; it commits only if the user said yes to committing,
+    pushes only if they said yes to both, never force-pushes, and records a `## Own-PR fixes`
+    entry in the report.
+  - An own-PR fix run changes only what the chosen findings ask for, does not commit a fix whose
+    verification failed, and edits in a worktree rather than the user's own checkout.
   - Inline comments follow the side rule - `RIGHT` with a head-file line number for an added or
     unchanged line, `LEFT` with a pre-image line number for a removed one - and a range finding
     carries `start_line`/`start_side` rather than collapsing onto its end line.
@@ -433,7 +479,16 @@ per skill.
   posting comments individually before submitting would double-notify the author and strand
   orphan comments on a failed submit. The review body carries no attribution because the review
   is submitted under the user's own account and is their review: an "automated-assist" marker
-  would be both noise and a claim about authorship that the account holder did not make.
+  would be both noise and a claim about authorship that the account holder did not make. The
+  own-PR path exists because GitHub rejects `APPROVE` and `REQUEST_CHANGES` on one's own PR,
+  which left a lone `COMMENT` - and the question tool cannot offer a single option - and because
+  comments addressed to oneself are a detour: on one's own PR the useful next step is fixing the
+  code. It branches at P2, where the authenticated login is first known, so the user is never
+  walked through "post this comment?" questions for comments that will not be posted. Commit and
+  push are asked separately, both defaulting to yes, because pushing is a write to GitHub that
+  the user may want to hold back after seeing the diff, and both are asked before any edit so
+  the fixing runs without further interruption. The worktree is detached so it cannot clash with
+  a local branch of the same name, including one already checked out elsewhere.
 
 ---
 

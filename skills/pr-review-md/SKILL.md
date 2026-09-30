@@ -58,6 +58,8 @@ confirms before it starts and asks per finding. Two consequences worth stating p
   Finish Phase 1 for every PR, then enter Phase 2 at its confirmation step like any other run.
 - Never post outside Phase 2's single review submission. No ad hoc `gh pr comment` to "just flag
   one thing", no individually posted inline comments alongside a review.
+- The own-PR path (F1 through F5) is Phase 2's only other write to GitHub: it pushes commits to
+  the user's own PR branch, and only after the user answered yes to pushing.
 
 ## When this fires
 
@@ -205,8 +207,9 @@ before moving on to step 11.
      `<report-directory>/<pr-id>-*.md`. If one exists, reuse that exact filename (overwrite
      it) instead of generating a fresh filename from a new paraphrase - this keeps re-reviews of
      the same PR overwriting one file rather than accumulating duplicates. If that file has a
-     `## Review submission` section from an earlier run, carry it forward into the rewrite rather
-     than dropping it - it is the record of what was already said on the PR.
+     `## Review submission` or `## Own-PR fixes` section from an earlier run, carry it forward
+     into the rewrite rather than dropping it - it is the record of what was already said on, or
+     changed in, the PR.
 
 10. **Write the report.** Ensure `<report-directory>` exists, then write
     `<report-directory>/<pr-id>-<short-title-slug>.md`:
@@ -261,7 +264,8 @@ before moving on to step 11.
 
 Runs only when the user explicitly asked for the review to be posted, whether in the original
 request or in a later message. P1 confirms once for the whole batch; P2 through P7 then repeat per
-PR, in the order the user named them.
+PR, in the order the user named them. On a PR the user authored, P2 routes to the own-PR path (F1
+through F5) instead of P3 through P7.
 
 Phase 2 can also start on its own, without Phase 1, when the user asks to post a review from a
 report that already exists (from an earlier session, say). In that case resolve
@@ -287,11 +291,22 @@ P2. **Gather what the submission needs.** Before asking the user anything about 
       accept an inline comment on. Phase 1 skips the diff because it does not analyze code;
       Phase 2 needs it for anchoring, not for judgment.
     - **The authenticated user, and whether they can write.** `gh api user -q .login` for the
-      duplicate check below and P5's own-PR rule, and
+      own-PR and duplicate checks below, and
       `gh api repos/<owner>/<repo> -q .permissions.push` to confirm the submission can land at
       all.
 
-    Then check for reasons not to proceed and raise them before the walk: the report already
+    **If the authenticated user is the PR author, take the own-PR path.** GitHub rejects
+    `APPROVE` and `REQUEST_CHANGES` on your own PR, and comments addressed to yourself are not the
+    useful outcome - fixing the code is. Skip the continue question below and ask with
+    `AskUserQuestion`, header "Own PR", offering **Fix findings** (recommended) and **Do
+    nothing**. The `question` text carries, as in P3: the PR number, repo and title; that this is
+    the user's own PR, so no review will be submitted; how many findings the report holds; and
+    anything else P2 found that bears on fixing - a merged or closed PR, where pushed fixes land
+    on a branch no longer under review; no write access, so a push cannot land; or an earlier
+    `## Own-PR fixes` entry in the report, with its date. On **Do nothing**, stop and say nothing
+    was changed or posted. On **Fix findings**, continue at F1.
+
+    Otherwise, check for reasons not to proceed and raise them before the walk: the report already
     carries a `## Review submission` section, the fetch shows a review by the authenticated
     user on this PR (a second submission double-notifies the author), the PR is merged or closed
     (`APPROVE` and `REQUEST_CHANGES` are rejected on a closed PR, leaving `COMMENT` as the only
@@ -376,9 +391,8 @@ P5. **Choose the submission type.** Ask with `AskUserQuestion`, header "Review t
     file/line and finding title; anything relocated into the body; how many findings were
     deferred or skipped; and the report's Recommendation line with its rationale. Mark as
     recommended whichever option matches that Recommendation (Approve -> `APPROVE`, Comment ->
-    `COMMENT`, Request changes -> `REQUEST_CHANGES`). If the authenticated user is the PR author,
-    GitHub rejects `APPROVE` and `REQUEST_CHANGES` on their own PR - offer `COMMENT` alone and
-    say why in the question.
+    `COMMENT`, Request changes -> `REQUEST_CHANGES`). The user's own PR never reaches this step:
+    P2 routed it to the own-PR path.
 
 P6. **Submit.** Post everything in a single API call; never post the inline comments individually
     first, which double-notifies and leaves orphaned comments behind if the submit then fails.
@@ -429,11 +443,100 @@ P7. **Update the report.** Append a dated entry under a `## Review submission` s
     deferred or skipped. A later Phase 2 run against the same report brings deferred findings back
     into the P3 walk and leaves skipped ones out unless the user asks for them.
 
+### Own-PR path
+
+Reached only from P2, when the authenticated user authored the PR and chose **Fix findings**.
+Nothing is posted as a review; the findings are fixed in the code instead.
+
+F1. **Walk each finding.** Same rules as P3 - report order, one finding per `AskUserQuestion`
+    call, everything the decision needs in the `question` text, the same `#<pr-id> F<n>` header -
+    with two changes to the layout: the fenced block is labelled "Finding, as the report words
+    it:", since it says what to change rather than being text to post, and the last line asks
+    "Fix this finding on PR #<pr-id>?". P3's note about a line missing from the diff does not
+    apply here, since nothing is anchored as a comment. Offer three options:
+    - **Fix** (recommended) - change the code to do what the finding asks.
+    - **Defer** - not this round; the finding stands and stays in the report as outstanding.
+    - **Skip** - do not fix it; the finding is withdrawn for this PR.
+
+    Deferred findings from an earlier run come back into this walk; skipped ones stay out unless
+    the user asks for them. If the walk leaves nothing marked Fix, stop, record the dispositions
+    per F5, and say nothing was changed.
+
+F2. **Ask about committing and pushing.** Before any edit, ask with one `AskUserQuestion` call
+    holding two questions, each with the PR number, the head branch (`pr.headRefName` from P2),
+    and the findings marked Fix, by number and title, in its `question` text:
+    - "Commit the fixes?" - **Yes** (recommended) or **No**. On No, the edits stay uncommitted
+      in the worktree for the user to review.
+    - "Push the commits to `<headRefName>`?" - **Yes** (recommended) or **No**. Say in the
+      question that this applies only if the fixes are committed, and repeat any P2 finding that
+      bears on it: a merged or closed PR, or no write access.
+
+    A Yes to push with a No to commit pushes nothing; say so rather than committing to make the
+    push possible.
+
+F3. **Set up a worktree.** Fixing needs a local clone of the PR's repo. Use the working
+    directory when one of its remotes points at `<owner>/<repo>`; otherwise ask where the
+    checkout is rather than cloning one. Use the remote whose URL matches the PR's repo - do not
+    assume it is `origin`. Then:
+
+    ```bash
+    git fetch <remote> <headRefName>
+    git worktree add --detach .worktrees/pr-<pr-id> <remote>/<headRefName>
+    ```
+
+    A detached worktree avoids clashing with a local branch of the same name, including one
+    already checked out elsewhere. Confirm the worktree's `HEAD` matches the head SHA from P2;
+    if it does not, the branch moved since the review, so say so and ask before fixing against
+    code the review never saw. If the fetch fails because the head branch lives on a fork, say
+    so and ask rather than guessing at a fork remote.
+
+F4. **Fix, verify, commit, push.** Work in the worktree, one finding at a time in report order:
+    - Make the smallest change that does what the finding asks. If the fix needs a decision the
+      finding does not settle, or the code shows the finding is wrong, stop and ask about that
+      finding rather than guessing.
+    - Verify the change with the repo's own test and lint targets that cover it, per the
+      workspace CLAUDE.md's Verifying Commands: judge by exit status and output body. If
+      verification fails, do not commit that fix; report the failure text verbatim and ask.
+    - If the user approved committing, commit each fix on its own, with a message saying what
+      changed and why and naming the finding. No attribution trailer, for the same reason the
+      review body carries none: the commit goes out under the user's own account.
+
+    If the user approved pushing, push once, after the last commit:
+    `git push <remote> HEAD:<headRefName>`. Never force-push. If the push is rejected because the
+    branch moved, report the error verbatim and ask - do not rebase, merge, or force to make it
+    land. After a successful push, remove the worktree with `git worktree remove`. If anything
+    was left uncommitted or unpushed, keep the worktree and give the user its path.
+
+F5. **Update the report.** Append a dated entry under a `## Own-PR fixes` section at the end of
+    the report file - append, never replace, for the same reason as P7:
+
+    ```markdown
+    ## Own-PR fixes
+
+    ### Fixed <YYYY-MM-DD>
+
+    - **Committed:** yes | no
+    - **Pushed:** yes, to <headRefName> | no
+    - **Worktree:** removed | kept at <path>
+
+    | # | Finding | Disposition |
+    |---|---------|-------------|
+    | 1 | <short title> | Fixed (<short SHA>) |
+    | 2 | <short title> | Fixed, uncommitted |
+    | 3 | <short title> | Deferred |
+    | 4 | <short title> | Skipped |
+    ```
+
+    Then report back: which findings were fixed, the commit SHAs, whether they were pushed, the
+    worktree path if it was kept, and which findings were deferred or skipped.
+
 ## Non-goals
 
-Do not perform independent code analysis - all review judgment stays with `review`. Do not wrap
+Do not perform independent code analysis - all review judgment stays with `review`. The own-PR
+path changes code, but only to do what a finding the user chose already asks; it does not look
+for new problems. Do not wrap
 `security-review` (it reviews the local current branch's pending changes, not an arbitrary PR by
 number - it doesn't fit this skill's PR-by-reference model) or the `pr-review-toolkit` plugin. Do
 not fire on a bare "review PR #N" with no filing/logging qualifier.
 
-**Never post anything back to GitHub outside Phase 2 - see "Hard rule" above.**
+**Never post or push anything to GitHub outside Phase 2 - see "Hard rule" above.**

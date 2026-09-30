@@ -1,6 +1,6 @@
 <!--
 created: 2026-07-16
-updated: 2026-09-14
+updated: 2026-09-30
 -->
 # Workspace AI agents config
 
@@ -45,8 +45,8 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
 
 - `gh` (GitHub CLI), authenticated - used by `fetch-pr` and `pr-review-md`, and by
   `triage-datadog`'s deploy-pipeline check. Read access covers everything except
-  `pr-review-md`'s opt-in posting phase, which submits a review and so needs write access to the
-  repository under review.
+  `pr-review-md`'s opt-in posting phase, which submits a review - or, on your own PR, pushes
+  fixes - and so needs write access to the repository under review.
 - `jq` - the formatting and filtering pipeline in every bundled script.
 - `pup` (Datadog API CLI, `datadog-labs/pup`) - `triage-datadog` only. Its recipes and wrapper
   scripts were verified against `pup` 1.6.4, then re-verified on 2026-08-31 against 1.16.0: the
@@ -98,8 +98,10 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
     An opt-in posting phase - reached only when the user explicitly asks - confirms, walks every
     finding (post as-is / revise / defer / skip), then posts the chosen comments and submits one
     APPROVE/COMMENT/REQUEST_CHANGES review per PR and records the dispositions back into the
-    report. A standalone "post the review for PR #N" against a report that already exists enters
-    at that second phase instead of reviewing the PR again. See
+    report. On your own PR it submits no review and instead offers to fix the findings you pick
+    in a worktree, committing and pushing only if you approve each. A standalone "post the
+    review for PR #N" against a report that already exists enters at that second phase instead
+    of reviewing the PR again. See
     `specs/skills.md`'s `pr-review-md` section for intent and `skills/pr-review-md/SKILL.md` for
     the generated artifact.
   - `triage-datadog` - investigates one or more Datadog monitors to a defensible root cause via
