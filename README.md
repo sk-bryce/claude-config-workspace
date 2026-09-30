@@ -47,7 +47,8 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
   `triage-datadog`'s deploy-pipeline check. Read access covers everything except
   `pr-review-md`'s opt-in posting phase, which submits a review - or, on your own PR, pushes
   fixes - and so needs write access to the repository under review.
-- `jq` - the formatting and filtering pipeline in every bundled script.
+- `jq` - the formatting and filtering pipeline in `fetch-pr`'s and `triage-datadog`'s bundled
+  scripts. `pr-review-md`'s `check-anchors.sh` needs only `gh` and a POSIX `awk`.
 - `pup` (Datadog API CLI, `datadog-labs/pup`) - `triage-datadog` only. Its recipes and wrapper
   scripts were verified against `pup` 1.6.4, then re-verified on 2026-08-31 against 1.16.0: the
   command and flag surface offline, and the response shapes the `jq` filters parse against a live
@@ -94,8 +95,12 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
     `review` to judge documentation substance when a PR touches docs, and to skip
     restating feedback already posted on the PR. Fires only when a filing/logging qualifier is
     present ("review PR #N and log/doc/file it") - a bare "review PR #N" still goes to the
-    native `review` skill. Delegates all code judgment to `review`. Filing is the default and
-    posts nothing: each report gets an editorial refinement pass and that is where the run ends.
+    native `review` skill. Delegates all code judgment to `review`, run in one Sonnet subagent
+    per PR, all in parallel, so the review's bulk stays out of the main context; it says up
+    front which path each PR takes, and falls back to inline when it cannot dispatch or a subagent
+    cannot invoke `review`. Filing is
+    the default and posts nothing: each report gets an editorial refinement pass and that is
+    where the run ends.
     An opt-in posting phase - reached only when the user explicitly asks - confirms, walks every
     finding (post as-is / revise / defer / skip), then posts the chosen comments and submits one
     APPROVE/COMMENT/REQUEST_CHANGES review per PR and records the dispositions back into the
@@ -104,7 +109,9 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
     review for PR #N" against a report that already exists enters at that second phase instead
     of reviewing the PR again. See
     `specs/skills.md`'s `pr-review-md` section for intent and `skills/pr-review-md/SKILL.md` for
-    the generated artifact.
+    the generated artifact. The posting phase lives in its `references/phase-2.md`, loaded only
+    when posting is asked for, and its `scripts/check-anchors.sh` reports which diff side and
+    line each finding can anchor to without loading the diff into context.
   - `triage-datadog` - investigates one or more Datadog monitors to a defensible root cause via
     the `pup` CLI and files a structured Markdown report per root cause. Accepts monitor links/IDs
     or an ambiguous scoped framing ("alerts for my team over the last 12 hours"), groups related

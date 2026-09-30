@@ -165,11 +165,29 @@ per skill.
   review, the reports are still written first and Phase 2 is entered at its confirmation step,
   so the ask is confirmed rather than inferred. The own-PR path's push is Phase 2's only other
   write to GitHub, and happens only after the user answered yes to pushing.
-- Model/tier: no pin - orchestration and formatting, not judgment-heavy or trivial; inherits
-  whatever model the calling session is already using, same convention as `fetch-pr`.
-- Knowledge source: none beyond this spec; no external reference doc is loaded.
-- Behavior (Phase 1, review and file - always runs; steps 1-10 repeat per PR when several are
-  named):
+- Model/tier: no pin on the skill - orchestration and formatting, not judgment-heavy or trivial;
+  it inherits whatever model the calling session is already using, same convention as `fetch-pr`.
+  The per-PR subagent that runs Phase 1's steps 2-10 is pinned to Sonnet (`model: "sonnet"` on
+  the `Agent` call), the workspace default for routine review.
+- Knowledge source: `references/phase-2.md`, holding Phase 2 and the own-PR path, loaded only
+  when a posting ask reaches Phase 2. Two bundled scripts: `fetch-pr`'s `scripts/fetch-pr.sh`
+  (called with `--compact`) and this skill's own `scripts/check-anchors.sh`.
+- Behavior (Phase 1, review and file - always runs; step 1 runs in the calling context for every
+  PR named, steps 2-10 run once per PR in a subagent with all PRs dispatched at once, and steps
+  11-12 run back in the calling context once every PR has its report):
+  - Dispatch: before dispatching, resolve everything a subagent cannot, since it cannot ask the
+    user and may not see the session's memory - the report directory, each PR's target and repo,
+    and the `jira-ticket-prefix` value or its absence. Print one line per PR naming the path it
+    takes: subagent type and model, or inline with this session's model and the reason. Dispatch
+    one `general-purpose` `Agent` per PR in a single message, pinned to Sonnet, whose brief names
+    the skill file to read, the steps to run (2-10), those resolved values, the hard rule, that it
+    must not ask the user, and what to return (report path, Recommendation line, finding count,
+    whether it invoked `review` through the `Skill` tool). The subagent skips the dispatch and
+    report-directory sections and starts at step 2. Fall back to running steps 2-10 inline, one
+    PR at a time, when the `Agent` tool is unavailable, and for any PR whose subagent could not
+    invoke `review` even if it wrote a report, saying which PR fell back and why. A subagent that
+    returns a question gets it answered and is dispatched again with the answer in its brief; one
+    that errors or returns a report path not on disk is dispatched once more, then run inline.
   0. Resolve the report directory from agent memory key `pr-review-docs-location`; if absent,
      prompt the user via `AskUserQuestion` (recommending `~/workspace/workbench/prs`) before
      running `review`, and write the memory entry plus its `MEMORY.md` pointer so later sessions do
@@ -179,13 +197,13 @@ per skill.
   1. Resolve the PR reference (number/URL/repo) the same way `fetch-pr` does; ask if the repo
      can't be inferred.
   2. Call `fetch-pr`'s script directly for metadata (no `--diff` - this skill doesn't analyze
-     code itself): `scripts/fetch-pr.sh <target> [--repo owner/repo] --json`. Reuses `fetch-pr`
-     instead of re-deriving `gh pr view` calls, per that skill's own composition invitation. From
-     the same JSON, also extract what's already been said on the PR - general comments
-     (`pr.comments`), review bodies (`pr.reviews`), and inline review comments
-     (`inline_comments`) - for step 4's duplicate-avoidance instruction, plus the head commit
-     SHA (`pr.headRefOid`) and the PR author's login, which Phase 2 needs to anchor its comments
-     and to tell whether the authenticated user is the author.
+     code itself): `scripts/fetch-pr.sh <target> [--repo owner/repo] --compact`. Reuses
+     `fetch-pr` instead of re-deriving `gh pr view` calls, per that skill's own composition
+     invitation. From the same JSON, also extract what's already been said on the PR - general
+     comments (`comments`), review bodies (`reviews`), and inline review comments
+     (`inline_comments`), every body in full - for step 4's duplicate-avoidance instruction, plus
+     the head commit SHA (`headRefOid`) and the PR author's login (`author`), which Phase 2 needs
+     to anchor its comments and to tell whether the authenticated user is the author.
   3. Map to a PR state label for the Summary: `state=OPEN, isDraft=true` -> "draft";
      `state=OPEN` -> "open"; `state=MERGED` -> "merged"; `state=CLOSED` -> "closed".
   4. Invoke `Skill('review', args: "<PR reference> - rate every finding with two explicit labels,
@@ -199,7 +217,8 @@ per skill.
      correctness, on the same scale. Also append the comments/reviews/inline comments gathered in
      step 2 as context, asking `review` to skip restating anything that duplicates them (or state
      plainly that none exist).
-  5. In the same context, after `review` returns: extract each finding's Impact, Confidence,
+  5. In the same context as `review` (the subagent, or the calling context on the inline
+     fallback), after `review` returns: extract each finding's Impact, Confidence,
      file/line, and description via reading comprehension, not a rigid parser - tolerant of
      `review` not perfectly following the requested format. A finding with no discernible
      Impact/Confidence defaults to Low/Low rather than being dropped.
@@ -226,8 +245,9 @@ per skill.
      rewrite rather than dropped, since it records what has already been said on, or changed in,
      the PR.
   10. Ensure `<report-directory>` exists, then write the report (Summary with state,
-      Recommendation with rationale, Findings sorted as above, or an explicit "No findings"
-      note).
+      Recommendation with rationale, Findings sorted as above, each with a Location line -
+      `path:line`, `path:start-end`, or `none` - that Phase 2's anchor check reads, or an
+      explicit "No findings" note).
   11. Once every PR in the request has a written report, and before anything is offered for
       posting, run one editorial refinement pass per report: invoke the `review-md` skill on each
       report path if it is available, otherwise dispatch a foreground `Agent` fork
@@ -235,8 +255,9 @@ per skill.
       read-through out of the calling context. The pass fixes accuracy, consistency, omissions and
       wording and may tighten a fenced comment, but does not re-litigate findings, ratings, or the
       Recommendation, and does not add findings.
-  12. Report back each file path written and each Recommendation line. If posting was not
-      explicitly asked for, stop there; a later, explicit request to post enters Phase 2 at P1.
+  12. Report back each file path written, the path each PR ran on (subagent and model, or inline
+      and why), and each Recommendation line. If posting was not explicitly asked for, stop
+      there; a later, explicit request to post enters Phase 2 at P1.
 - Behavior (Phase 2, post the review - only on an explicit posting ask; P1 confirms once for the
   whole batch and P2 through P7 repeat per PR in the order the user named them, except that P2
   routes a PR the user authored to the own-PR path, F1 through F5, instead; also reachable
@@ -250,11 +271,14 @@ per skill.
   P2. Gather everything the submission needs before asking about any finding, since a walk that
       runs to the end and then fails on a missing precondition wastes every answer given: the
       report re-read from disk (step 11 may have changed the wording and the file is the source
-      of truth); a fresh `scripts/fetch-pr.sh <target> [--repo owner/repo] --diff --json`, one
-      call covering the head SHA (`pr.headRefOid`, which may have moved since Phase 1), the
-      current state and reviews, and the diff that P4 needs in order to know which lines will
-      accept an inline comment - Phase 1 skips the diff because it does not analyze code, Phase 2
-      needs it for anchoring; and the authenticated user's login (`gh api user -q .login`) for
+      of truth); a fresh `scripts/fetch-pr.sh <target> [--repo owner/repo] --compact`, covering
+      the head SHA (`headRefOid`, which may have moved since Phase 1) and the current state and
+      reviews; right after it, one `scripts/check-anchors.sh <target> [--repo owner/repo]
+      <path:line>...` call over every finding's Location other than `none` (a range as
+      `path:start-end`), skipped when no finding has one, which reads the diff itself and prints
+      one row per anchor candidate - location, side, kind, and the line's text - so the diff
+      never enters the calling context, with a non-zero exit reported verbatim and asked about
+      rather than anchors guessed; and the authenticated user's login (`gh api user -q .login`) for
       the duplicate check and own-PR check here, along with whether that user can write to the
       repository (`gh api repos/<owner>/<repo> -q .permissions.push`), since a read-only login
       cannot land the submission at all. If that login is the PR author, ask "Fix findings"
@@ -274,7 +298,8 @@ per skill.
       everything the decision needs: the PR number, repo and title; the finding's number out of
       the total, and its title; Impact, Confidence, and file/line; the fenced comment text exactly
       as the report has it, and the context beneath it, both verbatim; and any other fact that
-      bears on the choice - the finding's line is absent from the P2 diff or it has no file/line,
+      bears on the choice - P2's anchor check found no commentable line for it or it has no
+      file/line,
       so it would land in the review body; it was deferred on an earlier run; the text is a
       revision. The header names the PR and finding number within the tool's 12-character cap.
       The decision is made against the real text rather than a summary, and it lives in the
@@ -290,9 +315,12 @@ per skill.
       with `path`, `line`, `side` (RIGHT for an added or unchanged line, LEFT for a removed one)
       and the comment text as `body`, with `commit_id` pinned to the P2 head SHA so anchors do
       not drift. `line` is numbered in the file its `side` names - the head file for RIGHT, the
-      pre-image for LEFT - read off the P2 diff rather than assumed to be a head-file line, and a
-      range finding carries `start_line`/`start_side` alongside the `line`/`side` that end it. A
-      finding whose location is not in the diff, or that has no file/line at all ("there are no
+      pre-image for LEFT - and taken from the finding's P2 anchor row rather than assumed to be a
+      head-file line; where a location printed both a RIGHT and a LEFT row, the row whose text is
+      the code the finding is about wins. A range finding with a `range` row carries
+      `start_line`/`start_side` alongside the `line`/`side` that end it. A finding whose anchor
+      row has side `-` (file or line not in the diff, or a range not inside one hunk), or that
+      has no file/line at all ("there are no
       tests for this"), cannot carry an inline comment, so it moves into the review body as a note
       naming the file and line where it has one, and the relocation is stated to the user rather
       than the finding being dropped. The review body is one or two sentences, factual, polite
@@ -376,6 +404,18 @@ per skill.
   - No findings -> the file states "No findings" and Recommendation is Approve, rather than an
     empty Findings section.
   - A bare "review PR X" with no filing qualifier does not trigger this skill.
+  - Given a request naming one or more PRs, steps 2-10 run in one Sonnet-pinned
+    `general-purpose` subagent per PR, all dispatched in a single message, and on that path
+    `review`'s output never enters the calling context. Before any PR starts, one line per PR
+    names the path it takes - subagent and model, or inline with the reason - and step 12
+    repeats it.
+  - With no `Agent` tool available, or for a PR whose subagent could not invoke `review`, the run
+    still produces that report inline and says which PR fell back and why, rather than failing
+    or reviewing without `review`.
+  - A subagent asks the user nothing and posts nothing; a decision it needs comes back to the
+    calling context as a question.
+  - A run that never reaches Phase 2 does not load `references/phase-2.md`, and a run that does
+    reads it in full before P1.
   - Every report is refined before any posting is offered: via `review-md` where that skill is
     available, otherwise via a forked agent, and in either case without findings, ratings, or the
     Recommendation changing as a result.
@@ -390,11 +430,11 @@ per skill.
     offered - and only findings marked Post reach GitHub, in the wording the user last accepted.
   - A standalone posting request for a PR with no report in `<report-directory>` results in a
     question about whether to review it first, not a silent Phase 1 run followed by a post.
-  - A posting run fetches the diff, head SHA, authenticated user's login and write permission,
-    and surfaces both duplicate signals - a `## Review submission` section in the report, and an
-    existing review by that login on the PR - as well as a closed/merged PR, before the
-    per-finding walk begins -
-    never discovering a blocked submission only after the user has answered every question.
+  - A posting run checks every finding's anchor, fetches the head SHA, the authenticated user's
+    login and write permission, and surfaces both duplicate signals - a `## Review submission`
+    section in the report, and an existing review by that login on the PR - as well as a
+    closed/merged PR, before the per-finding walk begins - never discovering a blocked
+    submission only after the user has answered every question.
   - The continue question after those checks and the submission-type question each hold their
     decision context in the question text itself - the reasons found with their specifics, and
     the assembled payload with the verbatim review body - rather than in a message printed
@@ -415,6 +455,17 @@ per skill.
   - Inline comments follow the side rule - `RIGHT` with a head-file line number for an added or
     unchanged line, `LEFT` with a pre-image line number for a removed one - and a range finding
     carries `start_line`/`start_side` rather than collapsing onto its end line.
+  - `scripts/check-anchors.sh` prints one tab-separated row per anchor candidate for each
+    location, in the order given, and never the diff: `RIGHT` with kind `added` or `context` for
+    a head-file line in a hunk, `LEFT` with kind `removed` for a removed pre-image line (so one
+    location can print both), `range` for a span whose ends share one hunk on one side, and side
+    `-` with `file-not-in-diff`, `line-not-in-diff`, or `range-not-in-one-hunk` otherwise. Each
+    `RIGHT` or `LEFT` row agrees with the anchors GitHub accepted for existing inline comments on
+    the same head commit. Line text is cut to 100 characters, with tabs turned to spaces. A
+    location splits on its last colon; a deleted file is keyed by its old path, a renamed one by
+    its new path, and a binary or hunkless file reports `file-not-in-diff`. It follows the shared
+    script conventions for `--help` and unknown flags, exits 2 on a usage error to match
+    `fetch-pr.sh`, which it is used alongside, and passes `gh`'s error through on a failed fetch.
   - A later posting run against the same report brings deferred findings back into the walk and
     leaves skipped ones out unless the user asks for them.
   - A walk that marks nothing Post submits nothing and says so, rather than landing a body-only
@@ -451,13 +502,34 @@ per skill.
   avoidance is delegated to `review` itself via plain-text context in the same `args`, rather
   than a separate string-match step in this skill, because judging whether a new finding's
   substance overlaps an existing comment is a semantic call an LLM reviewer is suited to make -
-  not a brittle text-matching heuristic here. `fetch-pr`'s `--json` call already returns general
-  comments, review bodies, and inline comments in one round trip; this was previously fetched and
-  discarded during the metadata step, so passing it forward needs no second fetch. The head
+  not a brittle text-matching heuristic here. `fetch-pr`'s `--compact` call returns general
+  comments, review bodies, and inline comments in one round trip, bodies in full, so passing
+  them forward needs no second fetch. It replaced `--json`, which carried the same comments as
+  raw REST objects at roughly 4-5x the size (measured on two public PRs when the flag was added),
+  and the Markdown summary was not an option because
+  it cuts review bodies to one line, which the duplicate check cannot afford. The head
   commit SHA the posting phase anchors against was added to `fetch-pr`'s field list for the same
   reason - one fetch that the caller reads what it needs from, rather than a second `gh pr view`
-  here for one field. Comment tone is specified here rather than left to the drafting model's
-  default because the fenced blocks are
+  here for one field. Steps 2-10 run in a subagent per PR because they hold most of a run's
+  tokens - the fetched comments, `review`'s whole analysis, the drafting - and none of it is
+  needed afterwards: the report file is already the source of truth for step 11 and Phase 2.
+  Left inline, that bulk rides along on every later turn, and the posting walk is one turn per
+  finding. Dispatching all PRs at once also turns a serial multi-PR run parallel. The subagent
+  is a fresh `general-purpose` agent rather than a fork: its tool list (`*`) guarantees the
+  `Skill` tool that `review` needs, which a fork's is not documented to, it can be pinned to a
+  cheaper model where a fork always runs on the parent's, and it does not inherit a possibly
+  long parent context. It is a runtime `Agent` call made from the skill body rather than
+  `context: fork` frontmatter, which the maintainer has seen go unhonored. Because it depends
+  on instruction-following, the path each PR took is printed up front and again at the end, and
+  the subagent reports whether it actually invoked `review`. Anchoring is checked by
+  a script rather than by reading the diff because the diff is the largest thing Phase 2 would
+  otherwise load, as an escaped JSON string at that, and the question per finding is mechanical:
+  which hunk lines a number falls on. The script hands back the line's text so the model can
+  settle the one judgment left - which side a finding means when both carry that number. Phase 2
+  and the own-PR path live in `references/phase-2.md` because they are about half the skill and
+  run only on an opt-in; the pointer left in `SKILL.md` says nothing there is enough to post, so
+  a run that skipped the file has no instructions to post from. Comment tone is specified here
+  rather than left to the drafting model's default because the fenced blocks are
   meant to be pasted onto a real PR verbatim: a finding that is technically correct but reads as a
   verdict on the author costs more in review friction than it saves in words, and curiosity-framed
   phrasing also leaves room for the author to supply context the reviewer lacked. The rule that
