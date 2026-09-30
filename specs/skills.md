@@ -281,12 +281,15 @@ per skill.
       rather than anchors guessed; and the authenticated user's login (`gh api user -q .login`) for
       the duplicate check and own-PR check here, along with whether that user can write to the
       repository (`gh api repos/<owner>/<repo> -q .permissions.push`), since a read-only login
-      cannot land the submission at all. If that login is the PR author, ask "Fix findings"
-      (recommended) or "Do nothing" instead of the continue question below, since GitHub rejects
-      `APPROVE` and `REQUEST_CHANGES` on one's own PR and fixing the code is the useful outcome;
-      the question text holds the PR number, repo and title, that no review will be submitted,
-      the finding count, and any P2 fact that bears on fixing - a merged/closed PR, no write
-      access, an earlier `## Own-PR fixes` entry. Do nothing stops with nothing changed; Fix
+      cannot land the submission, or on the own-PR path the push, at all. If that login is the PR
+      author, compared case-insensitively, the PR takes the own-PR path, since GitHub rejects
+      `APPROVE` and `REQUEST_CHANGES` on one's own PR and fixing the code is the useful outcome.
+      With no finding left open to walk (per F1), say so and move to the next PR. Otherwise ask
+      "Fix findings" or "Do nothing" instead of the continue question below - Fix findings
+      recommended, Do nothing on a merged or closed PR - with the question text holding the PR
+      number, repo and title, that no review will be submitted, the count of open findings, and
+      any P2 fact that bears on fixing - a merged/closed PR, no write access, an earlier
+      `## Own-PR fixes` entry. Do nothing leaves this PR unchanged and moves to the next; Fix
       findings continues at F1. For anyone else's PR, surface any reason not to proceed and ask
       whether to continue: an existing `## Review submission` section, an existing review by the
       authenticated user on this PR (a second submission double-notifies the author), a
@@ -299,9 +302,9 @@ per skill.
       the total, and its title; Impact, Confidence, and file/line; the fenced comment text exactly
       as the report has it, and the context beneath it, both verbatim; and any other fact that
       bears on the choice - P2's anchor check found no commentable line for it or it has no
-      file/line,
-      so it would land in the review body; it was deferred on an earlier run; the text is a
-      revision. The header names the PR and finding number within the tool's 12-character cap.
+      file/line, so it would land in the review body; it was deferred on an earlier run; the text
+      is a revision. The header names the PR and finding number within the tool's 12-character cap,
+      in a form such as `PR482 #3` that cannot be read as an own-PR step name like F3.
       The decision is made against the real text rather than a summary, and it lives in the
       question rather than in a message before the call, which the dialog can cover. Each
       question offers four options: Post as-is (recommended), Revise the wording before posting,
@@ -359,34 +362,43 @@ per skill.
       run brings deferred findings back into the P3 walk and leaves skipped ones out unless asked.
 - Behavior (own-PR path - reached only from P2, when the authenticated user authored the PR and
   chose Fix findings; nothing is submitted as a review):
-  F1. Walk the findings as in P3 - one per `AskUserQuestion` call, the decision's context in the
-      question text, the report's fenced text shown verbatim as the statement of what to change -
-      offering Fix (recommended), Defer, or Skip. Deferred findings from an earlier run come
-      back; skipped ones stay out unless asked. A walk with nothing marked Fix changes nothing
-      and records the dispositions per F5.
-  F2. Before any edit, ask in one `AskUserQuestion` call whether to commit the fixes (default
-      Yes) and whether to push them to the PR's head branch (default Yes), naming the PR, the
-      branch, and the findings marked Fix. Push applies only to committed fixes: a Yes to push
-      with a No to commit pushes nothing, and the skill says so rather than committing anyway.
+  F1. Walk the findings still open - no disposition yet in the report's `## Review submission` or
+      `## Own-PR fixes` entries, or a latest one of Deferred or Not fixed; Fixed, Posted and
+      Skipped ones stay out unless asked - as in P3: one per `AskUserQuestion` call, the
+      decision's context in the question text, the report's fenced text shown verbatim as the
+      statement of what to change, offering Fix (recommended), Defer, or Skip. A walk with
+      nothing marked Fix changes nothing and records the dispositions per F5.
+  F2. Before any edit, ask in one `AskUserQuestion` call whether to commit the fixes (Yes
+      recommended) and whether to push them to the PR's head branch (Yes recommended, or No when
+      P2 found no write access), each question naming the PR, the branch, and the findings
+      marked Fix. Push applies only to committed fixes: a Yes to push with a No to commit pushes
+      nothing, and the skill says so rather than committing anyway.
   F3. Fix in a detached worktree of the PR's head branch - `git fetch <remote> <headRefName>`,
       then `git worktree add --detach .worktrees/pr-<pr-id> <remote>/<headRefName>` - in a local
       clone whose remote points at the PR's repo, asking where the checkout is rather than
-      cloning when the working directory is not one, and never assuming the remote is `origin`.
-      A `HEAD` that differs from P2's head SHA, or a head branch that lives on a fork, is raised
-      and asked about rather than worked around.
+      cloning when the working directory is not one. The remote is the one `git remote -v` shows
+      pointing at the PR's repo, never assumed to be `origin`, and the skill asks if none or
+      several match. A `HEAD` that differs from P2's head SHA, or a fetch that fails because the
+      head branch was deleted or lives on a fork, is raised and asked about rather than worked
+      around.
   F4. Fix each chosen finding in report order with the smallest change that does what it asks,
       stopping to ask when a fix needs a decision the finding does not settle or the code shows
       the finding is wrong. Verify each change with the repo's own test and lint targets, judged
       by exit status and output body; a failing fix is not committed, and the failure is reported
-      verbatim. With commit approved, one commit per fix, with no attribution trailer. With push
-      approved, one `git push <remote> HEAD:<headRefName>` after the last commit - never a force
-      push, and a rejected push is reported and asked about rather than rebased or forced. The
-      worktree is removed after a successful push and otherwise kept, with its path given.
+      verbatim. A finding that ends unfixed has its edits undone, leaving earlier fixes in place,
+      and is recorded as Not fixed with the reason. With commit approved, one commit per fix,
+      with no attribution trailer. With push approved, one `git push <remote> HEAD:<headRefName>`
+      after the last commit - never a force push, and a rejected push is reported and asked about
+      rather than rebased or forced. The worktree is removed after a successful push and
+      otherwise kept, with its path given; unpushed commits first get a `pr-<pr-id>-fixes`
+      branch, so removing the worktree later cannot orphan them.
   F5. Append a dated entry under a `## Own-PR fixes` section in the report - appended, never
-      replaced - recording whether the fixes were committed and pushed, where the worktree is,
-      and a per-finding disposition table (Fixed with its short SHA / Fixed, uncommitted /
-      Deferred / Skipped). Then report back the fixed findings, commit SHAs, push status,
-      worktree path if kept, and the deferred and skipped findings.
+      replaced - recording whether the fixes were committed and pushed, where the worktree is
+      (`none` when the walk marked nothing Fix), and a per-finding disposition table (Fixed with
+      its short SHA / Fixed, uncommitted / Not fixed with the reason / Deferred / Skipped). The
+      Findings section stays as written. Then report back the fixed findings, commit SHAs, push
+      status, worktree path and branch if kept, and the findings not fixed, deferred, or skipped,
+      and continue with the next PR in the batch.
 - Acceptance criteria:
   - Given a filing-qualified PR review request, produces one Markdown file at
     `<report-directory>/<id>-<slug>.md` with a Summary (including PR state), a
@@ -398,7 +410,7 @@ per skill.
     accusatory or dismissive phrasing - while still naming a specific, actionable ask.
   - Re-running the same request against the same PR overwrites the existing file for that PR id
     rather than creating a second one, even if the paraphrased short title differs between runs,
-    and any existing `## Review submission` section survives the overwrite.
+    and any existing `## Review submission` or `## Own-PR fixes` section survives the overwrite.
   - A missing `pr-review-docs-location` memory key results in a prompt to the user and a written
     memory entry, not a guessed or hardcoded path, and the prompt comes before `review` runs.
   - No findings -> the file states "No findings" and Recommendation is Approve, rather than an
@@ -435,23 +447,30 @@ per skill.
     section in the report, and an existing review by that login on the PR - as well as a
     closed/merged PR, before the per-finding walk begins - never discovering a blocked
     submission only after the user has answered every question.
-  - The continue question after those checks and the submission-type question each hold their
-    decision context in the question text itself - the reasons found with their specifics, and
-    the assembled payload with the verbatim review body - rather than in a message printed
-    before the call.
+  - The continue question after those checks, the own-PR Fix findings / Do nothing question, the
+    F1 walk, the F2 commit and push questions, and the submission-type question each hold their
+    decision context in the question text itself - the reasons found with their specifics, the
+    findings and branch involved, and the assembled payload with the verbatim review body -
+    rather than in a message printed before the call.
   - A posting run submits exactly one review per PR, of the type the user chose, in a single API
     call, with inline comments anchored to the head SHA; a finding whose line is absent from the
     diff appears in the review body with its file/line rather than being dropped or silently
     re-anchored.
   - When the authenticated user is the PR's own author, the posting run submits no review: it
-    asks Fix findings or Do nothing right after its P2 checks, and Do nothing ends the run with
-    nothing changed or posted.
+    asks Fix findings or Do nothing right after its P2 checks, or says there is nothing to fix
+    when no finding is open, and Do nothing leaves that PR with nothing changed or posted before
+    moving to the next PR in the batch.
   - An own-PR fix run asks about each finding (Fix / Defer / Skip) and asks whether to commit and
     whether to push before editing anything; it commits only if the user said yes to committing,
     pushes only if they said yes to both, never force-pushes, and records a `## Own-PR fixes`
     entry in the report.
   - An own-PR fix run changes only what the chosen findings ask for, does not commit a fix whose
-    verification failed, and edits in a worktree rather than the user's own checkout.
+    verification failed, records every finding it could not fix as Not fixed with the reason,
+    and edits in a detached worktree rather than the user's own checkout - asking rather than
+    guessing when the remote is ambiguous, the head branch is gone or on a fork, or `HEAD`
+    differs from P2's head SHA.
+  - An own-PR fix run that commits without pushing leaves the commits on a named
+    `pr-<pr-id>-fixes` branch in the kept worktree, not only on a detached `HEAD`.
   - Inline comments follow the side rule - `RIGHT` with a head-file line number for an added or
     unchanged line, `LEFT` with a pre-image line number for a removed one - and a range finding
     carries `start_line`/`start_side` rather than collapsing onto its end line.
@@ -573,10 +592,11 @@ per skill.
   comments addressed to oneself are a detour: on one's own PR the useful next step is fixing the
   code. It branches at P2, where the authenticated login is first known, so the user is never
   walked through "post this comment?" questions for comments that will not be posted. Commit and
-  push are asked separately, both defaulting to yes, because pushing is a write to GitHub that
+  push are asked separately, both recommending yes, because pushing is a write to GitHub that
   the user may want to hold back after seeing the diff, and both are asked before any edit so
-  the fixing runs without further interruption. The worktree is detached so it cannot clash with
-  a local branch of the same name, including one already checked out elsewhere.
+  the routine path runs without further interruption. The worktree is detached so it cannot
+  clash with a local branch of the same name, including one already checked out elsewhere, and
+  unpushed commits get a named branch so that removing the worktree cannot orphan them.
 
 ---
 

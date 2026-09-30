@@ -46,19 +46,22 @@ P2. **Gather what the submission needs.** Before asking the user anything about 
       exit, report its stderr verbatim and ask rather than guessing anchors.
     - **The authenticated user, and whether they can write.** `gh api user -q .login` for the
       own-PR and duplicate checks below, and
-      `gh api repos/<owner>/<repo> -q .permissions.push` to confirm the submission can land at
-      all.
+      `gh api repos/<owner>/<repo> -q .permissions.push` to confirm the submission - or, on the
+      own-PR path, the push - can land at all.
 
-    **If the authenticated user is the PR author, take the own-PR path.** GitHub rejects
-    `APPROVE` and `REQUEST_CHANGES` on your own PR, and comments addressed to yourself are not the
-    useful outcome - fixing the code is. Skip the continue question below and ask with
-    `AskUserQuestion`, header "Own PR", offering **Fix findings** (recommended) and **Do
-    nothing**. The `question` text carries, as in P3: the PR number, repo and title; that this is
-    the user's own PR, so no review will be submitted; how many findings the report holds; and
-    anything else P2 found that bears on fixing - a merged or closed PR, where pushed fixes land
-    on a branch no longer under review; no write access, so a push cannot land; or an earlier
-    `## Own-PR fixes` entry in the report, with its date. On **Do nothing**, stop and say nothing
-    was changed or posted. On **Fix findings**, continue at F1.
+    **If the authenticated user is the PR author, take the own-PR path.** Compare the logins
+    case-insensitively, as GitHub does. GitHub rejects `APPROVE` and `REQUEST_CHANGES` on your
+    own PR, and comments addressed to yourself are not the useful outcome - fixing the code is.
+    If no finding is left to walk (see F1), say so and move on to the next PR with nothing
+    changed. Otherwise skip the continue question below and ask with `AskUserQuestion`, header
+    "Own PR", offering **Fix findings** and **Do nothing**, with Fix findings recommended unless
+    the PR is merged or closed, where Do nothing is. The `question` text carries, as in P3: the
+    PR number, repo and title; that this is the user's own PR, so no review will be submitted;
+    how many findings are left to walk; and anything else P2 found that bears on fixing - a
+    merged or closed PR, where pushed fixes land on a branch no longer under review; no write
+    access, so a push cannot land; or an earlier `## Own-PR fixes` entry in the report, with its
+    date. On **Do nothing**, say nothing was changed or posted on this PR and move on to the next
+    PR. On **Fix findings**, continue at F1.
 
     Otherwise, check for reasons not to proceed and raise them before the walk: the report already
     carries a `## Review submission` section, the fetch shows a review by the authenticated
@@ -99,7 +102,7 @@ P3. **Walk each finding.** For every finding in the report, in report order:
       would go into the review body rather than inline (P4); that the finding was deferred on an
       earlier run, with that run's date; or that the text is a revision of the report's wording.
       Omit a line that has nothing to say, such as Context for a finding with none.
-    - Set the header to the PR and finding number, e.g. `#482 F3` - the tool caps headers at 12
+    - Set the header to the PR and finding number, e.g. `PR482 #3` - the tool caps headers at 12
       characters - and offer these four options:
       - **Post as-is** (recommended) - goes into the review submission verbatim.
       - **Revise the wording before posting** - post it, but not in these words.
@@ -206,35 +209,39 @@ Reached only from P2, when the authenticated user authored the PR and chose **Fi
 Nothing is posted as a review; the findings are fixed in the code instead.
 
 F1. **Walk each finding.** Same rules as P3 - report order, one finding per `AskUserQuestion`
-    call, everything the decision needs in the `question` text, the same `#<pr-id> F<n>` header -
-    with two changes to the layout: the fenced block is labelled "Finding, as the report words
-    it:", since it says what to change rather than being text to post, and the last line asks
-    "Fix this finding on PR #<pr-id>?". P3's note about a finding with no commentable line does
-    not apply here, since nothing is anchored as a comment. Offer three options:
+    call, everything the decision needs in the `question` text, the same `PR<pr-id> #<n>`
+    header - with two changes to the layout: the fenced block is labelled "Finding, as the report
+    words it:", since it says what to change rather than being text to post, and the last line asks
+    "Fix this finding on PR #<pr-id>?". P3's notes about a finding with no commentable line and
+    about revised text do not apply here: nothing is anchored as a comment, and there is no
+    Revise option. Offer three options:
     - **Fix** (recommended) - change the code to do what the finding asks.
     - **Defer** - not this round; the finding stands and stays in the report as outstanding.
     - **Skip** - do not fix it; the finding is withdrawn for this PR.
 
-    Deferred findings from an earlier run come back into this walk; skipped ones stay out unless
-    the user asks for them. If the walk leaves nothing marked Fix, stop, record the dispositions
-    per F5, and say nothing was changed.
+    Walk only the findings still open: those with no disposition yet in the report's
+    `## Review submission` or `## Own-PR fixes` entries, or whose latest one is Deferred or Not
+    fixed. Leave out findings already Fixed, Posted, or Skipped unless the user asks for them. If
+    the walk leaves nothing marked Fix, record the dispositions per F5 and say nothing was
+    changed.
 
 F2. **Ask about committing and pushing.** Before any edit, ask with one `AskUserQuestion` call
     holding two questions, each with the PR number, the head branch (`headRefName` from P2),
     and the findings marked Fix, by number and title, in its `question` text:
     - "Commit the fixes?" - **Yes** (recommended) or **No**. On No, the edits stay uncommitted
       in the worktree for the user to review.
-    - "Push the commits to `<headRefName>`?" - **Yes** (recommended) or **No**. Say in the
-      question that this applies only if the fixes are committed, and repeat any P2 finding that
-      bears on it: a merged or closed PR, or no write access.
+    - "Push the commits to `<headRefName>`?" - **Yes** or **No**, with Yes recommended unless P2
+      found no write access, where No is. Say in the question that this applies only if the fixes
+      are committed, and repeat any P2 finding that bears on it: a merged or closed PR, or no
+      write access.
 
     A Yes to push with a No to commit pushes nothing; say so rather than committing to make the
     push possible.
 
 F3. **Set up a worktree.** Fixing needs a local clone of the PR's repo. Use the working
     directory when one of its remotes points at `<owner>/<repo>`; otherwise ask where the
-    checkout is rather than cloning one. Use the remote whose URL matches the PR's repo - do not
-    assume it is `origin`. Then:
+    checkout is rather than cloning one. Use the remote whose URL matches the PR's repo, found
+    with `git remote -v` - do not assume it is `origin`, and ask if none or several match. Then:
 
     ```bash
     git fetch <remote> <headRefName>
@@ -243,9 +250,10 @@ F3. **Set up a worktree.** Fixing needs a local clone of the PR's repo. Use the 
 
     A detached worktree avoids clashing with a local branch of the same name, including one
     already checked out elsewhere. Confirm the worktree's `HEAD` matches the head SHA from P2;
-    if it does not, the branch moved since the review, so say so and ask before fixing against
-    code the review never saw. If the fetch fails because the head branch lives on a fork, say
-    so and ask rather than guessing at a fork remote.
+    if it does not, the branch moved after P2 fetched it, or the remote holds a different branch
+    of that name, so say so and ask before fixing. If the fetch fails - the head branch was
+    deleted, as is common once a PR is merged, or it lives on a fork - say which and ask rather
+    than guessing at another remote.
 
 F4. **Fix, verify, commit, push.** Work in the worktree, one finding at a time in report order:
     - Make the smallest change that does what the finding asks. If the fix needs a decision the
@@ -254,6 +262,9 @@ F4. **Fix, verify, commit, push.** Work in the worktree, one finding at a time i
     - Verify the change with the repo's own test and lint targets that cover it, per the
       workspace CLAUDE.md's Verifying Commands: judge by exit status and output body. If
       verification fails, do not commit that fix; report the failure text verbatim and ask.
+    - A finding that ends unfixed - the user chose not to settle the decision, the finding was
+      wrong, or verification failed and the user did not want another attempt - has its edits
+      undone, leaving earlier fixes in place, and is recorded as Not fixed with the reason.
     - If the user approved committing, commit each fix on its own, with a message saying what
       changed and why and naming the finding. No attribution trailer, for the same reason the
       review body carries none: the commit goes out under the user's own account.
@@ -262,7 +273,9 @@ F4. **Fix, verify, commit, push.** Work in the worktree, one finding at a time i
     `git push <remote> HEAD:<headRefName>`. Never force-push. If the push is rejected because the
     branch moved, report the error verbatim and ask - do not rebase, merge, or force to make it
     land. After a successful push, remove the worktree with `git worktree remove`. If anything
-    was left uncommitted or unpushed, keep the worktree and give the user its path.
+    was left uncommitted or unpushed, keep the worktree and give the user its path. Commits left
+    unpushed sit on a detached `HEAD`, which removing the worktree would orphan, so first run
+    `git branch pr-<pr-id>-fixes` in the worktree and give the user that branch name too.
 
 F5. **Update the report.** Append a dated entry under a `## Own-PR fixes` section at the end of
     the report file - append, never replace, for the same reason as P7:
@@ -274,15 +287,21 @@ F5. **Update the report.** Append a dated entry under a `## Own-PR fixes` sectio
 
     - **Committed:** yes | no
     - **Pushed:** yes, to <headRefName> | no
-    - **Worktree:** removed | kept at <path>
+    - **Worktree:** removed | kept at <path> (branch pr-<pr-id>-fixes if it holds commits) | none
 
     | # | Finding | Disposition |
     |---|---------|-------------|
     | 1 | <short title> | Fixed (<short SHA>) |
     | 2 | <short title> | Fixed, uncommitted |
-    | 3 | <short title> | Deferred |
-    | 4 | <short title> | Skipped |
+    | 3 | <short title> | Not fixed (<reason>) |
+    | 4 | <short title> | Deferred |
+    | 5 | <short title> | Skipped |
     ```
 
+    When the walk marked nothing Fix, F2 through F4 never ran: record Committed and Pushed as
+    `no` and Worktree as `none`. The Findings section stays as written; the dispositions here are
+    the record of what was acted on.
+
     Then report back: which findings were fixed, the commit SHAs, whether they were pushed, the
-    worktree path if it was kept, and which findings were deferred or skipped.
+    worktree path and branch if kept, and which findings were not fixed, deferred, or skipped.
+    Then continue with the next PR in the batch, if any.

@@ -105,7 +105,7 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
     finding (post as-is / revise / defer / skip), then posts the chosen comments and submits one
     APPROVE/COMMENT/REQUEST_CHANGES review per PR and records the dispositions back into the
     report. On your own PR it submits no review and instead offers to fix the findings you pick
-    in a worktree, committing and pushing only if you approve each. A standalone "post the
+    in a worktree, committing and pushing only if you say yes to each. A standalone "post the
     review for PR #N" against a report that already exists enters at that second phase instead
     of reviewing the PR again. See
     `specs/skills.md`'s `pr-review-md` section for intent and `skills/pr-review-md/SKILL.md` for

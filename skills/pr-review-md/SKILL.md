@@ -9,8 +9,9 @@ description: |
   comment, plus a Summary and a Recommendation. Code judgment is delegated to the native `review`
   skill. Filing is the whole job by default; posting the comments and submitting an
   APPROVE/COMMENT/REQUEST_CHANGES review is an opt-in posting phase that confirms first and walks
-  every finding. A bare "review PR #123" with no filing qualifier does not trigger this - that
-  stays with `review`. Scope: workspace.
+  every finding; on the user's own PR it offers to fix the findings instead. A bare
+  "review PR #123" with no filing qualifier does not trigger this - that stays with `review`.
+  Scope: workspace.
 ---
 
 <!--
@@ -33,7 +34,8 @@ The skill has two phases:
 
 - **Phase 1 - review and file.** Always runs. Ends with written reports and nothing sent anywhere.
 - **Phase 2 - post the review.** Runs only when the user explicitly asks for the review to be
-  posted, and only through the gates in `references/phase-2.md`.
+  posted, and only through the gates in `references/phase-2.md`. On the user's own PR it submits
+  no review and offers to fix the findings in the code instead.
 
 ## Hard rule: filing is the default, posting is opt-in and gated
 
@@ -315,7 +317,7 @@ never do any of those from memory of it.
 
 Do not perform independent code analysis - all review judgment stays with `review`. The own-PR
 path changes code, but only to do what a finding the user chose already asks; it does not look
-for new problems. Do not wrap
-`security-review` (it reviews the local current branch's pending changes, not an arbitrary PR by
-number - it doesn't fit this skill's PR-by-reference model) or the `pr-review-toolkit` plugin. Do
-not fire on a bare "review PR #N" with no filing/logging qualifier.
+for new problems. Do not wrap `security-review` (it reviews the local current branch's pending
+changes, not an arbitrary PR by number - it doesn't fit this skill's PR-by-reference model) or
+the `pr-review-toolkit` plugin. Do not fire on a bare "review PR #N" with no filing/logging
+qualifier.
