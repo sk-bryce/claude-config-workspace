@@ -13,7 +13,7 @@ description: |
 
 <!--
 created: 2026-08-05
-updated: 2026-09-14
+updated: 2026-09-30
 spec: specs/skills.md (fetch-pr section)
 generated-by: claude-sonnet-5 (main agent, no skill-author pass)
 model: claude-sonnet-5
@@ -40,6 +40,11 @@ GitHub.
 3. Map natural-language asks to script flags:
    - Mentions of "diff", "changes", "what changed" -> add `--diff`.
    - A request that wants to parse or chain the result programmatically -> add `--json`.
+   - A calling skill that needs only the metadata and every comment's full author and body, not
+     CI checks or the raw API objects -> add `--compact` instead of `--json` (the two are
+     alternatives; passing both is a usage error). Unlike the Markdown summary, which cuts each
+     review body to its first line, it keeps every body whole. With `--diff` it adds the diff as
+     a `diff` field. `pr-review-md` calls it this way.
    - Otherwise, no extra flags - the default Markdown summary covers metadata, checks, review
      decision, general comments, and inline comments.
 
@@ -48,10 +53,11 @@ GitHub.
 Call `scripts/fetch-pr.sh` with the resolved arguments:
 
 ```
-scripts/fetch-pr.sh <pr-number-or-url> [--repo owner/repo] [--diff] [--json]
+scripts/fetch-pr.sh <pr-number-or-url> [--repo owner/repo] [--diff] [--json | --compact]
 ```
 
-Relay its stdout back to the user largely as-is - the script already formats the summary, so
+Relay its stdout back to the user largely as-is (with `--json` or `--compact`, hand the JSON to
+the calling skill instead) - the script already formats the summary, so
 this is a relay step, not a re-fetch. Do not re-run individual `gh` commands manually to
 double-check or re-derive what the script already returned.
 

@@ -75,6 +75,8 @@ per skill.
   is loaded.
 - Behavior: identify the PR number/URL and repo from the request. Map natural-language asks to
   script flags explicitly (for example "including the diff" or "what changed" implies `--diff`).
+  A calling skill that needs only metadata and full comment bodies passes `--compact`, the
+  trimmed alternative to `--json`.
   If no repo is named and none can be inferred from context, ask which repo rather than guessing.
   Call `scripts/fetch-pr.sh` with the resolved flags and relay its output - the script already
   formats it, so this is a relay, not a re-fetch. If the script exits non-zero (auth failure,
@@ -100,6 +102,14 @@ per skill.
     `split("\n")` on an empty string returns `[]`, so indexing `[0]` for a first line yields null
     unless the index is guarded; every approval left without a comment hits this.
   - Counts agree with their noun: one changed file reads `across 1 file`, not `across 1 files`.
+  - `--compact` emits JSON holding only the PR metadata (number, title, url, state, `isDraft`,
+    author login, head and base branch, `headRefOid`, review decision) and, for every review,
+    general comment, and inline comment, its author login and full body - plus state and date for
+    reviews, date for general comments, and `path` and `line` for inline comments. No review body
+    is cut to its first line, and every review, general comment, and inline comment the raw
+    `--json` holds is present. Inline comments use the same `author` key as the rest, not the
+    REST API's `user`. It drops the change counts, timestamps, and CI checks, and adds the diff
+    as a `diff` field only with `--diff`. Passing it with `--json` is a usage error (exit 2).
   - Never posts anything back to GitHub.
   - A repo that cannot be inferred is asked about rather than guessed.
   - A non-zero exit from the script surfaces the real `gh`/`jq` error text to the user.
@@ -112,7 +122,13 @@ per skill.
   resolution deliberately has no separate fallback logic: it relies on `gh`'s own default-repo
   inference from the working directory's git remote, and lets `gh`'s own error surface verbatim
   when that fails, which the calling skill then treats as the cue to ask the user for a repo
-  rather than guessing one.
+  rather than guessing one. `--compact` exists because both machine-readable options failed a
+  caller that feeds the result to a model. Raw `--json` passes every inline comment through as
+  the full REST object - user record, URL set, reactions, `diff_hunk` - so it ran about 4-5x the
+  size of the compact form on real PRs. The Markdown summary is smaller still, but cuts review
+  bodies to their first line, which loses exactly what a duplicate-feedback check needs. The
+  projection is done in `jq` rather than left to the caller to summarize, so what survives is
+  fixed by the script, not by a model's reading.
 
 ---
 

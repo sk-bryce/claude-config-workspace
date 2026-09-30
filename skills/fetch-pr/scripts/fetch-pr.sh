@@ -4,13 +4,18 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: fetch-pr.sh <pr-number-or-url> [--repo owner/repo] [--diff] [--json]
+Usage: fetch-pr.sh <pr-number-or-url> [--repo owner/repo] [--diff] [--json | --compact]
 
   <pr-number-or-url>  PR number (e.g. 123) or a full PR URL. Required.
   --repo owner/repo   Target repo. Omit to let gh infer it from the current
                        working directory's git remote.
   --diff              Also fetch and include the PR diff (gh pr diff).
   --json              Emit raw merged JSON instead of a Markdown summary.
+  --compact           Emit trimmed JSON instead: PR metadata (number, title, url,
+                       state, isDraft, author, head/base branch, head SHA, review
+                       decision) plus the full author and body of every review,
+                       general comment, and inline comment (with path and line).
+                       No CI checks. Cannot be combined with --json.
   -h, --help          Show this help.
 EOF
 }
@@ -19,6 +24,7 @@ target=""
 repo=""
 want_diff=false
 json_mode=false
+compact_mode=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,6 +38,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --json)
       json_mode=true
+      shift
+      ;;
+    --compact)
+      compact_mode=true
       shift
       ;;
     -h|--help)
@@ -60,6 +70,12 @@ done
 
 if [[ -z "$target" ]]; then
   echo "fetch-pr.sh: missing <pr-number-or-url>" >&2
+  usage >&2
+  exit 2
+fi
+
+if $json_mode && $compact_mode; then
+  echo "fetch-pr.sh: --json and --compact are alternatives; pass one" >&2
   usage >&2
   exit 2
 fi
@@ -109,6 +125,27 @@ fi
 # comment hit. `first_line` indexes that safely.
 jq_defs='def blank_as($fallback): if . == null or . == "" then $fallback else . end;
          def first_line: (. // "") | split("\n") | (.[0] // "");'
+
+# --compact keeps only what a caller acts on. The raw inline comments carry a full user object,
+# URL set, reactions and diff_hunk apiece, which --json passes through untouched. Bodies stay
+# whole - unlike the Markdown summary's first-line reviews - since a caller checking for
+# duplicate feedback needs all of it.
+if $compact_mode; then
+  jq -n --argjson pr "$view_json" --argjson inline "$comments_json" \
+    --argjson want_diff "$want_diff" --arg diff "$diff_text" "$jq_defs"'
+    def login: blank_as("unknown");
+    {
+      number: $pr.number, title: $pr.title, url: $pr.url,
+      state: $pr.state, isDraft: $pr.isDraft, author: ($pr.author.login | login),
+      headRefName: $pr.headRefName, baseRefName: $pr.baseRefName, headRefOid: $pr.headRefOid,
+      reviewDecision: ($pr.reviewDecision | blank_as("none")),
+      reviews: [($pr.reviews // [])[] | {author: (.author.login | login), state, submittedAt, body}],
+      comments: [($pr.comments // [])[] | {author: (.author.login | login), createdAt, body}],
+      inline_comments: [$inline[] | {path, line: (.line // .original_line), author: (.user.login | login), body}]
+    }
+    | if $want_diff then . + {diff: $diff} else . end'
+  exit 0
+fi
 
 pr_query() { echo "$view_json" | jq -r "$jq_defs $1"; }
 comments_query() { echo "$comments_json" | jq -r "$jq_defs $1"; }

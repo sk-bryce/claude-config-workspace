@@ -81,7 +81,8 @@ The skills shell out to CLIs rather than bundling their own clients, so a clone 
   - `fetch-pr` - fetches and formats GitHub PR data (metadata including draft status and the head
     commit SHA, CI/check status, review decision, general and inline comments, optionally the
     diff) via the `gh` CLI, so PR-review work gets one clean summary instead of re-deriving raw
-    `gh` calls each time.
+    `gh` calls each time. Its `--compact` mode gives a calling skill trimmed JSON with every
+    comment body in full.
     Fetch/format only - no review judgment, no posting back to GitHub. See `specs/skills.md`'s
     `fetch-pr` section for intent and `skills/fetch-pr/SKILL.md` for the generated artifact.
   - `pr-review-md` - wraps the native `review` skill so a PR review lands as a persisted,
