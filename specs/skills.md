@@ -1,6 +1,6 @@
 ---
 created: 2026-08-05
-updated: 2026-09-14
+updated: 2026-09-30
 ---
 
 # Skill Specs
@@ -241,16 +241,22 @@ per skill.
       `## Review submission` section, an existing review by the authenticated user on this PR (a
       second submission double-notifies the author), or a merged/closed PR, where `APPROVE` and
       `REQUEST_CHANGES` are rejected and only `COMMENT` is usable.
-  P3. Walk the findings in report order. Immediately before each `AskUserQuestion`, print the
-      finding verbatim - number and title, Impact, Confidence, file/line, the fenced comment text
-      exactly as the report has it, and the context beneath it - so the decision is made against
-      the real text rather than a summary. Each question offers four options: Post as-is
-      (recommended), Revise the wording before posting, Defer (not this round; the finding stands
-      and stays outstanding in the report), Skip (withdrawn for this PR). One finding per call -
+  P3. Walk the findings in report order. Each `AskUserQuestion` call's `question` text carries
+      everything the decision needs: the PR number, repo and title; the finding's number out of
+      the total, and its title; Impact, Confidence, and file/line; the fenced comment text exactly
+      as the report has it, and the context beneath it, both verbatim; and any other fact that
+      bears on the choice - the finding's line is absent from the P2 diff or it has no file/line,
+      so it would land in the review body; it was deferred on an earlier run; the text is a
+      revision. The header names the PR and finding number within the tool's 12-character cap.
+      The decision is made against the real text rather than a summary, and it lives in the
+      question rather than in a message before the call, which the dialog can cover. Each
+      question offers four options: Post as-is (recommended), Revise the wording before posting,
+      Defer (not this round; the finding stands and stays outstanding in the report), Skip
+      (withdrawn for this PR). One finding per call -
       the point of the walk is approving each comment's exact text before it lands on someone
-      else's PR, which stacking four comment bodies above one call works against. A Revise answer
-      loops: rewrite from the user's wording or steer, show the revised text verbatim, re-ask the
-      same four options, and post exactly the text they last accepted.
+      else's PR, which four comment bodies in one call works against. A Revise answer loops:
+      rewrite from the user's wording or steer, re-ask with the revised text verbatim in the
+      question and the same four options, and post exactly the text they last accepted.
   P4. Assemble one review per PR from the findings marked Post: each becomes an inline comment
       with `path`, `line`, `side` (RIGHT for an added or unchanged line, LEFT for a removed one)
       and the comment text as `body`, with `commit_id` pinned to the P2 head SHA so anchors do
@@ -318,8 +324,9 @@ per skill.
     already having the PR open. When the user's original request also asked for the review to be
     posted, the reports are written and refined first and Phase 2 begins at its confirmation
     question rather than posting inline.
-  - Given a confirmed posting run, every finding gets its own `AskUserQuestion` call - its
-    verbatim comment text shown immediately before it, with Post as-is / Revise / Defer / Skip
+  - Given a confirmed posting run, every finding gets its own `AskUserQuestion` call whose
+    question text itself holds the PR number, the finding number and title, its ratings and
+    file/line, and its verbatim comment text and context, with Post as-is / Revise / Defer / Skip
     offered - and only findings marked Post reach GitHub, in the wording the user last accepted.
   - A standalone posting request for a PR with no report in `<report-directory>` results in a
     question about whether to review it first, not a silent Phase 1 run followed by a post.
@@ -407,9 +414,12 @@ per skill.
   rather than a single "post all of this?" prompt reflects what the decision
   actually is: the findings are independent, and the common real outcome is posting most of them
   while rewording one and dropping another - an all-or-nothing prompt pushes the user toward
-  posting text they would have changed. Defer and Skip are kept distinct because they mean
-  different things to a later run: a deferred finding is still true and comes back, a skipped one
-  was decided against. The submission is one API call to the reviews endpoint because `gh pr
+  posting text they would have changed. The finding travels inside each question's own text,
+  not in a message printed before the call, because the question dialog can render over that
+  message: a run did show the comment verbatim beforehand and the dialog still covered it, so
+  the user was asked to approve text they could not see. Defer and Skip are kept distinct
+  because they mean different things to a later run: a deferred finding is still true and comes
+  back, a skipped one was decided against. The submission is one API call to the reviews endpoint because `gh pr
   review` cannot carry inline comments at all, and because posting comments individually before
   submitting would double-notify the author and strand orphan comments on a failed submit. The
   review body carries no attribution because the review is submitted under the user's own account

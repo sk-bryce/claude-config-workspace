@@ -15,7 +15,7 @@ description: |
 
 <!--
 created: 2026-08-05
-updated: 2026-09-14
+updated: 2026-09-30
 spec: specs/skills.md (pr-review-md section)
 generated-by: claude-sonnet-5 (main agent, no skill-author pass)
 model: claude-sonnet-5
@@ -299,22 +299,46 @@ P2. **Gather what the submission needs.** Before asking the user anything about 
     all. Say what you found and ask whether to continue.
 
 P3. **Walk each finding.** For every finding in the report, in report order:
-    - **First, in the message before the tool call**, show the finding verbatim: its number and
-      title, Impact, Confidence, file/line, the fenced comment text exactly as the report has it,
-      and the context beneath the fence. The user is deciding on that exact text, so it has to be
-      on screen - never summarize it into the question.
-    - Then ask with `AskUserQuestion`, header naming the finding number, with these four options:
+    - **Put everything the decision needs inside the `AskUserQuestion` call's `question` text.**
+      The question dialog can render over a message printed before the call, so the finding
+      shown there may not be on screen when the user answers. The user is deciding on the exact
+      comment text, so the question itself carries it, in this layout:
+
+      ````text
+      PR #<pr-id> (<owner>/<repo>): <PR title>
+      Finding <n> of <total>: <finding title>
+      Impact: <impact> | Confidence: <confidence> | <file>:<line>
+
+      Comment to post, verbatim:
+      ```
+      <the fenced comment text exactly as the report has it>
+      ```
+
+      Context: <the context beneath the fence, verbatim>
+
+      Post this comment on PR #<pr-id>?
+      ````
+
+      Copy the comment text and its context from the report character for character - never
+      summarize, shorten, or paraphrase either one into the question. Add a line under the
+      Impact line for anything else that bears on the choice: that the P2 diff does not contain
+      the finding's line, or that it has no file/line at all, so it would go into the review body
+      rather than inline (P4); that the finding was deferred on an earlier run, with that run's
+      date; or that the text is a revision of the report's wording. Omit a line that has nothing
+      to say, such as Context for a finding with none.
+    - Set the header to the PR and finding number, e.g. `#482 F3` - the tool caps headers at 12
+      characters - and offer these four options:
       - **Post as-is** (recommended) - goes into the review submission verbatim.
       - **Revise the wording before posting** - post it, but not in these words.
       - **Defer** - not this round; the finding stands and stays in the report as outstanding.
       - **Skip** - do not post it at all; the finding is withdrawn for this PR.
     - One finding per `AskUserQuestion` call. The point of the walk is that the user approves
       each comment's exact text before it lands on someone else's PR, and four comment bodies
-      stacked above one call works against that.
+      in one call works against that.
     - On **Revise**, take the user's wording or steer (the tool's free-text option carries it),
-      rewrite the comment, show the revised text verbatim, and ask again with the same four
-      options until it resolves to Post, Defer, or Skip. Post exactly the text they last saw and
-      accepted - no further polishing afterward.
+      rewrite the comment, and ask again with the same layout and four options, the revised text
+      now in the comment block, until it resolves to Post, Defer, or Skip. Post exactly the text
+      they last saw and accepted - no further polishing afterward.
 
 P4. **Assemble the submission.** One review per PR, carrying every finding marked Post:
     - Each becomes an inline comment anchored with `path` and `line` from the finding's file/line,
